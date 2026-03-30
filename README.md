@@ -18,7 +18,7 @@ pip install -r requirements.txt
 python3 workbench.py
 ```
 
-Open http://127.0.0.1:9000 in your browser.
+Open http://127.0.0.1:9800 in your browser.
 
 ## Prerequisites
 
@@ -103,7 +103,7 @@ Copy `.env.example` to `.env` and adjust:
 
 | Variable | Default | Purpose |
 |---|---|---|
-| `WORKBENCH_PORT` | `9000` | Server port |
+| `WORKBENCH_PORT` | `9800` | Server port |
 | `WORKBENCH_HOST` | `127.0.0.1` | Bind address (localhost only by default) |
 | `WORKBENCH_DB_PATH` | `./workbench.db` | Database location |
 

@@ -42,7 +42,7 @@ check "Claude Code CLI installed" \
     "Install Claude Code: https://docs.anthropic.com/en/docs/claude-code"
 
 # Port availability
-PORT="${WORKBENCH_PORT:-9000}"
+PORT="${WORKBENCH_PORT:-9800}"
 check "Port $PORT available" \
     "! lsof -i :$PORT -sTCP:LISTEN" \
     "Port $PORT is in use. Set WORKBENCH_PORT to use a different port."

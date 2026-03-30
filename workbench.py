@@ -33,7 +33,7 @@ log = logging.getLogger("workbench")
 # Configuration
 # ---------------------------------------------------------------------------
 
-PORT = int(os.environ.get("WORKBENCH_PORT", "9000"))
+PORT = int(os.environ.get("WORKBENCH_PORT", "9800"))
 HOST = os.environ.get("WORKBENCH_HOST", "127.0.0.1")
 DB_PATH = os.environ.get("WORKBENCH_DB_PATH", "./workbench.db")
 SEED_DEMO = os.environ.get("WB_SEED_DEMO", "0") == "1"
