@@ -239,7 +239,9 @@ def run(agent: str, sessions_dir: str | None = None):
             action = extract_current_action(entry)
             if action and action != last_action:
                 last_action = action
-                _emit(EVENT_ACTION, dict(action), ts)
+                # Only emit action for thinking/idle — tool_use is covered by EVENT_TOOL_CALL
+                if action.get("state") in ("thinking", "idle", "responding"):
+                    _emit(EVENT_ACTION, dict(action), ts)
 
         # Skip streaming partials for classified events — only process the
         # final assistant message (with stop_reason) to avoid 3x duplicates.
