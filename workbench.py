@@ -236,6 +236,10 @@ def _register_tools():
             return json.dumps({"error": "Not registered."})
         with db() as conn:
             result = messaging.send_dm(conn, name, to, body, type)
+            # Inject into recipient's tmux so they see it immediately
+            recipient = conn.execute("SELECT tmux_session, status FROM agents WHERE name = ?", (to,)).fetchone()
+            if recipient and recipient["status"] == "alive" and recipient["tmux_session"]:
+                _inject_message_to_tmux(recipient["tmux_session"], f"[DM from {name}] {body}")
         msg_id = result.get("id") if isinstance(result, dict) else result
         from events import event_bus
         event_bus.publish("new_message", {
@@ -252,6 +256,16 @@ def _register_tools():
             return json.dumps({"error": "Not registered."})
         with db() as conn:
             result = messaging.post_to_channel(conn, name, channel, body, type)
+            # Inject into all subscribed agents' tmux (except sender)
+            subs = conn.execute(
+                "SELECT s.agent, a.tmux_session FROM subscriptions s "
+                "JOIN agents a ON s.agent = a.name "
+                "WHERE s.channel = ? AND a.status = 'alive' AND s.agent != ?",
+                (channel, name)
+            ).fetchall()
+            for sub in subs:
+                if sub["tmux_session"]:
+                    _inject_message_to_tmux(sub["tmux_session"], f"[#{channel} from {name}] {body}")
         msg_id = result.get("id") if isinstance(result, dict) else result
         from events import event_bus
         event_bus.publish("new_message", {
