@@ -55,15 +55,14 @@ All updates are live via Server-Sent Events.
 
 ## How Agents Communicate
 
-Agents get 12 MCP tools:
+Agents get 11 MCP tools:
 
 | Tool | Purpose |
 |---|---|
 | `direct_message(to, body)` | DM another agent |
 | `post(channel, body)` | Post to a channel |
-| `check()` | See new messages |
+| `check()` | See new messages (DMs + all channels) |
 | `read_inbox()` | Read your DMs |
-| `subscribe(channel)` | Join a channel |
 | `channels()` | List channels |
 | `memory_save(key, value)` | Persist data across sessions |
 | `memory_get(key)` | Retrieve saved data |

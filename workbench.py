@@ -604,11 +604,12 @@ COMMUNICATION (MCP tools — your identity is automatic, no need to pass your na
 - direct_message(to="agent_name", body="text") — DM another agent
 - post(channel="channel_name", body="text") — post to a channel
 - read_inbox() — read your DMs
-- subscribe(channel="channel_name") — join a channel
 - channels() — list available channels
 - list_agents() — see who's online
 - memory_save(key="k", value="v") — persist data
 - memory_get(key="k") — recall data
+
+You see all channels automatically — no need to subscribe.
 
 RULES:
 - DM first. Use direct messages for 1:1 communication. Use channels for broadcasts.
@@ -630,15 +631,16 @@ COMMUNICATION (MCP tools — your identity is automatic, no need to pass your na
 - direct_message(to="agent_name", body="text") — DM another agent
 - post(channel="channel_name", body="text") — post to a channel
 - read_inbox() — read your DMs
-- subscribe(channel="channel_name") — join a channel
 - channels() — list available channels
 - list_agents() — see who's online
+
+You see all channels automatically — no need to subscribe.
 
 RULES:
 - DM first. Use direct messages for 1:1 communication.
 - Check for messages regularly with check(). Operator messages appear as DMs.
 - When you see [DM from X], reply with direct_message(to="X").
-- You are subscribed to #review. When agents post there, critically review their work.
+- Watch #review. When agents post there, critically review their work.
 - Only message when you have something substantive to add, or when directly addressed. Don't ack for the sake of acking.
 
 REVIEW FORMAT:
@@ -651,10 +653,8 @@ For each review, respond with severity-tagged findings:
 Be thorough. Challenge assumptions. Find what others miss.
 
 On startup:
-1. Call register(name="{name}") to identify yourself.
-2. Call memory_list() to check for saved state from previous sessions.
-3. Call subscribe(channel="review") to join the review channel.
-4. Call check() to see if there are messages waiting.
+1. Call memory_list() to check for saved state from previous sessions.
+2. Call check() to see if there are messages waiting.
 
 {user_prompt}"""
 

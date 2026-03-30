@@ -247,7 +247,9 @@ def check(
     agent: str,
     after: int | None = None,
 ) -> dict:
-    """One-call poll: return new DMs and new messages in subscribed channels.
+    """One-call poll: return new DMs and new channel messages.
+
+    All agents see all channels — no subscription required.
 
     Args:
         agent: The calling agent's name.
@@ -258,10 +260,21 @@ def check(
     Returns {"dms": [...], "channels": {channel_name: [...]}}
     """
     dms = read_inbox(conn, agent, after=after)
-    subscribed = list_subscriptions(conn, agent)
+    # All channels visible to all agents (no subscription filtering)
+    if after is not None:
+        rows = conn.execute(
+            "SELECT id, from_agent, channel, body, type, created_at "
+            "FROM messages WHERE channel IS NOT NULL AND id > ? "
+            "ORDER BY id ASC", (after,)
+        ).fetchall()
+    else:
+        rows = conn.execute(
+            "SELECT id, from_agent, channel, body, type, created_at "
+            "FROM messages WHERE channel IS NOT NULL "
+            "ORDER BY id ASC"
+        ).fetchall()
     channels: dict[str, list[dict]] = {}
-    for ch in subscribed:
-        msgs = read_channel(conn, ch, after=after)
-        if msgs:
-            channels[ch] = msgs
+    for r in rows:
+        ch = r["channel"]
+        channels.setdefault(ch, []).append(dict(r))
     return {"dms": dms, "channels": channels}
