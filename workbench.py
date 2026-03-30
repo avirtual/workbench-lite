@@ -600,6 +600,8 @@ RULES:
 - Check for messages regularly with check(). Operator messages appear as DMs.
 - When you see [DM from X], reply with direct_message(to="X").
 - Post to #review when you want feedback on your work.
+- On startup, check memory_list() for saved state from previous sessions. Load relevant memories before scanning the repo.
+- Save important findings with memory_save(key="...", value="...") so you don't lose them on restart.
 
 {user_prompt}"""
 
@@ -633,8 +635,9 @@ Be thorough. Challenge assumptions. Find what others miss.
 
 On startup:
 1. Call register(name="{name}") to identify yourself.
-2. Call subscribe(channel="review") to join the review channel.
-3. Call check() to see if there are messages waiting.
+2. Call memory_list() to check for saved state from previous sessions.
+3. Call subscribe(channel="review") to join the review channel.
+4. Call check() to see if there are messages waiting.
 
 {user_prompt}"""
 

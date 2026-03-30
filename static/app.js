@@ -40,20 +40,12 @@ async function selectAgent(name) {
     document.getElementById('agent-dm-input').placeholder = `Message ${name}...`;
     document.getElementById('agent-dm-input').focus();
 
-    loadAgentMessages(name);
+    loadAgentStream(name);
+    if (streamTimer) clearInterval(streamTimer);
+    streamTimer = setInterval(() => loadAgentStream(selectedAgent), 3000);
 }
 
-async function loadAgentMessages(name) {
-    const msgs = await apiFetch(`/api/agents/${name}/messages`);
-    const pane = document.getElementById('agent-dm-messages');
-    if (!msgs.length) {
-        pane.innerHTML = `<p class="placeholder">No messages yet. Say something!</p>`;
-        return;
-    }
-    const wasAtBottom = pane.scrollHeight - pane.scrollTop - pane.clientHeight < 50;
-    pane.innerHTML = msgs.map(renderMsg).join('');
-    if (wasAtBottom) pane.scrollTop = pane.scrollHeight;
-}
+// loadAgentMessages removed — using unified stream instead
 
 // ---------------------------------------------------------------------------
 // Sidebar: Channels
@@ -144,80 +136,106 @@ async function loadActivity() {
 }
 
 // ---------------------------------------------------------------------------
-// Agent tabs (Messages / Activity)
+// Agent activity stream (terminal-style, merged activity + messages)
 // ---------------------------------------------------------------------------
 
-let activeAgentTab = 'dms';
-let activityTimer = null;
+let streamTimer = null;
 
-function switchAgentTab(tab) {
-    activeAgentTab = tab;
-    document.querySelectorAll('.agent-tab').forEach(t => t.classList.toggle('active', t.dataset.tab === tab));
-    document.querySelectorAll('.agent-tab-content').forEach(c => c.classList.remove('active'));
-    if (tab === 'dms') {
-        document.getElementById('agent-dm-messages').classList.add('active');
-        document.getElementById('form-agent-dm').style.display = '';
-        if (activityTimer) { clearInterval(activityTimer); activityTimer = null; }
-    } else {
-        document.getElementById('agent-activity').classList.add('active');
-        document.getElementById('form-agent-dm').style.display = 'none';
-        loadAgentActivity(selectedAgent);
-        activityTimer = setInterval(() => loadAgentActivity(selectedAgent), 3000);
-    }
-}
-
-async function loadAgentActivity(name) {
+async function loadAgentStream(name) {
     if (!name) return;
-    const events = await apiFetch(`/api/agents/${name}/activity?limit=100`);
-    const pane = document.getElementById('agent-activity');
-    if (!events.length) {
-        pane.innerHTML = '<p class="placeholder">No activity yet — waiting for agent to start working...</p>';
+    const [activity, msgs] = await Promise.all([
+        apiFetch(`/api/agents/${name}/activity?limit=200`).catch(() => []),
+        apiFetch(`/api/agents/${name}/messages?limit=100`).catch(() => []),
+    ]);
+
+    // Merge and sort by timestamp
+    const items = [];
+    for (const ev of activity) {
+        items.push({ ts: ev.ts || '', src: 'activity', data: ev });
+    }
+    for (const m of msgs) {
+        items.push({ ts: m.created_at || '', src: 'message', data: m });
+    }
+    items.sort((a, b) => a.ts.localeCompare(b.ts));
+
+    const pane = document.getElementById('agent-stream');
+    if (!items.length) {
+        pane.innerHTML = '<p class="placeholder" style="padding:40px">Waiting for agent activity...</p>';
         return;
     }
     const wasAtBottom = pane.scrollHeight - pane.scrollTop - pane.clientHeight < 50;
-    pane.innerHTML = events.map(renderActivityEvent).join('');
+    pane.innerHTML = items.map(item => {
+        if (item.src === 'message') return renderStreamMsg(item.data);
+        return renderStreamActivity(item.data);
+    }).filter(Boolean).join('');
     if (wasAtBottom) pane.scrollTop = pane.scrollHeight;
 }
 
-function renderActivityEvent(ev) {
-    const time = ev.ts ? new Date(ev.ts).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit',second:'2-digit'}) : '';
-    const event = ev.event || '';
-    let icon = '', detail = '';
+function renderStreamActivity(ev) {
+    const type = (ev.event || '').replace(/^agent\./, '').replace(/\.jsonl$/, '');
+    const time = _fmtTime(ev.ts);
+    let text = '', cls = 'act-out';
 
-    if (event.includes('tool_call')) {
-        icon = 'T';
-        detail = `<strong>${esc(ev.tool || '')}</strong> ${esc(ev.input_summary || '')}`;
-    } else if (event.includes('tool_result')) {
-        icon = ev.is_error ? 'E' : 'R';
-        detail = esc((ev.result_summary || '').slice(0, 200));
-    } else if (event.includes('message')) {
-        icon = 'M';
-        detail = esc((ev.text_preview || '').slice(0, 200));
-    } else if (event.includes('thinking')) {
-        icon = '...';
-        detail = `thinking (${ev.output_tokens || 0} tokens)`;
-    } else if (event.includes('action')) {
-        icon = 'A';
-        detail = `${esc(ev.action || '')} ${esc(ev.detail || '')}`;
-    } else if (event.includes('user_message')) {
-        icon = 'U';
-        const sender = ev.sender ? `[${esc(ev.sender)}] ` : '';
-        detail = sender + esc((ev.text_preview || '').slice(0, 200));
-    } else if (event.includes('usage')) {
-        icon = '$';
-        detail = `in:${ev.input_tokens||0} out:${ev.output_tokens||0} cache:${ev.cache_read_tokens||0}`;
-    } else {
-        icon = '?';
-        detail = esc(JSON.stringify(ev).slice(0, 150));
+    switch (type) {
+        case 'tool_call': {
+            const tool = ev.tool || '?';
+            const summary = ev.input_summary || '';
+            if (tool === 'direct_message' || tool === 'post') {
+                text = summary;
+            } else if (tool === 'Bash' || tool === 'bash') {
+                text = `$ ${summary}`;
+            } else {
+                text = summary ? `${tool.toLowerCase()}(${summary})` : tool.toLowerCase();
+            }
+            break;
+        }
+        case 'tool_result':
+            if (!ev.is_error) return '';  // only show errors
+            text = `\u23BF \u2717 ${(ev.result_summary || 'error').slice(0, 300)}`;
+            cls = 'act-result act-error';
+            break;
+        case 'thinking':
+            text = `thinking...`;
+            cls = 'act-thinking';
+            break;
+        case 'message':
+            text = (ev.text_preview || '').trim().slice(0, 400);
+            cls = 'act-msg';
+            break;
+        case 'user_message': {
+            const preview = (ev.text_preview || '').trim();
+            if (!preview) return '';
+            const sender = ev.sender || '';
+            text = sender ? `\u2190 ${sender}: ${preview}` : `\u2190 ${preview}`;
+            cls = 'act-in';
+            break;
+        }
+        case 'action':
+            return '';  // skip — redundant with tool_call
+        case 'turn_complete':
+        case 'usage':
+            return '';  // skip noise
+        default:
+            return '';
     }
+    if (!text.trim()) return '';
+    return `<div class="act-line ${cls}"><span class="act-ts">${esc(time)}</span><span class="act-text">${esc(text)}</span></div>`;
+}
 
-    return `
-        <div class="activity-item">
-            <span class="activity-time">${esc(time)}</span>
-            <span class="activity-icon">${icon}</span>
-            <span class="activity-body">${detail}</span>
-        </div>
-    `;
+function renderStreamMsg(m) {
+    const time = _fmtTime(m.created_at);
+    const sender = m.from_agent || '?';
+    const isIncoming = sender === 'operator' || m.to_agent === selectedAgent;
+    const cls = isIncoming ? 'act-in' : 'act-out';
+    const arrow = isIncoming ? '\u2190' : '\u2192';
+    const target = m.to_agent ? ` ${arrow} ${m.to_agent}` : (m.channel ? ` ${arrow} #${m.channel}` : '');
+    return `<div class="act-line ${cls}"><span class="act-ts">${esc(time)}</span><span class="act-text">${esc(sender)}${target}: ${esc(m.body || '')}</span></div>`;
+}
+
+function _fmtTime(ts) {
+    if (!ts) return '';
+    const d = new Date(ts);
+    return isNaN(d) ? '' : d.toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit' });
 }
 
 // ---------------------------------------------------------------------------
@@ -363,10 +381,8 @@ function connectSSE() {
     });
 
     eventSource.addEventListener('new_message', () => {
-        // Refresh current view
-        if (selectedAgent) loadAgentMessages(selectedAgent);
+        if (selectedAgent) loadAgentStream(selectedAgent);
         if (selectedChannel) loadChannelMessages(selectedChannel);
-        // Always refresh activity + channel list for real-time feel
         if (document.getElementById('pane-activity').classList.contains('active')) loadActivity();
         loadChannelList();
     });
