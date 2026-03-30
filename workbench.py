@@ -532,6 +532,29 @@ async def api_send_dm(request: Request):
     return JSONResponse({"status": "sent"})
 
 
+async def api_agent_activity(request: Request):
+    """GET /api/agents/:name/activity — parsed activity from JSONL session."""
+    name = request.path_params["name"]
+    limit = int(request.query_params.get("limit", "50"))
+    sessions_dir = Path(os.environ.get("WB_SESSIONS_DIR", "/tmp/basic-wb-sessions"))
+    activity_file = sessions_dir / f"{name}.activity"
+    if not activity_file.exists():
+        return JSONResponse([])
+    events = []
+    try:
+        with open(activity_file) as f:
+            for line in f:
+                line = line.strip()
+                if line:
+                    try:
+                        events.append(json.loads(line))
+                    except json.JSONDecodeError:
+                        pass
+    except Exception:
+        pass
+    return JSONResponse(events[-limit:])
+
+
 async def api_activity(request: Request):
     """GET /api/activity — unified feed of all messages (DMs + channels), most recent first."""
     limit = int(request.query_params.get("limit", "100"))
@@ -673,6 +696,7 @@ routes = [
     Route("/api/channels/{name}/messages", api_post_to_channel, methods=["POST"]),
     Route("/api/agents/{name}/messages", api_agent_messages, methods=["GET"]),
     Route("/api/agents/{name}/messages", api_send_dm, methods=["POST"]),
+    Route("/api/agents/{name}/activity", api_agent_activity, methods=["GET"]),
     Route("/api/activity", api_activity, methods=["GET"]),
     Route("/api/feed/stream", api_feed_stream, methods=["GET"]),
     Mount("/static", StaticFiles(directory=str(SCRIPT_DIR / "static")), name="static"),

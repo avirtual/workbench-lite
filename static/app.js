@@ -144,6 +144,83 @@ async function loadActivity() {
 }
 
 // ---------------------------------------------------------------------------
+// Agent tabs (Messages / Activity)
+// ---------------------------------------------------------------------------
+
+let activeAgentTab = 'dms';
+let activityTimer = null;
+
+function switchAgentTab(tab) {
+    activeAgentTab = tab;
+    document.querySelectorAll('.agent-tab').forEach(t => t.classList.toggle('active', t.dataset.tab === tab));
+    document.querySelectorAll('.agent-tab-content').forEach(c => c.classList.remove('active'));
+    if (tab === 'dms') {
+        document.getElementById('agent-dm-messages').classList.add('active');
+        document.getElementById('form-agent-dm').style.display = '';
+        if (activityTimer) { clearInterval(activityTimer); activityTimer = null; }
+    } else {
+        document.getElementById('agent-activity').classList.add('active');
+        document.getElementById('form-agent-dm').style.display = 'none';
+        loadAgentActivity(selectedAgent);
+        activityTimer = setInterval(() => loadAgentActivity(selectedAgent), 3000);
+    }
+}
+
+async function loadAgentActivity(name) {
+    if (!name) return;
+    const events = await apiFetch(`/api/agents/${name}/activity?limit=100`);
+    const pane = document.getElementById('agent-activity');
+    if (!events.length) {
+        pane.innerHTML = '<p class="placeholder">No activity yet — waiting for agent to start working...</p>';
+        return;
+    }
+    const wasAtBottom = pane.scrollHeight - pane.scrollTop - pane.clientHeight < 50;
+    pane.innerHTML = events.map(renderActivityEvent).join('');
+    if (wasAtBottom) pane.scrollTop = pane.scrollHeight;
+}
+
+function renderActivityEvent(ev) {
+    const time = ev.ts ? new Date(ev.ts).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit',second:'2-digit'}) : '';
+    const event = ev.event || '';
+    let icon = '', detail = '';
+
+    if (event.includes('tool_call')) {
+        icon = 'T';
+        detail = `<strong>${esc(ev.tool || '')}</strong> ${esc(ev.input_summary || '')}`;
+    } else if (event.includes('tool_result')) {
+        icon = ev.is_error ? 'E' : 'R';
+        detail = esc((ev.result_summary || '').slice(0, 200));
+    } else if (event.includes('message')) {
+        icon = 'M';
+        detail = esc((ev.text_preview || '').slice(0, 200));
+    } else if (event.includes('thinking')) {
+        icon = '...';
+        detail = `thinking (${ev.output_tokens || 0} tokens)`;
+    } else if (event.includes('action')) {
+        icon = 'A';
+        detail = `${esc(ev.action || '')} ${esc(ev.detail || '')}`;
+    } else if (event.includes('user_message')) {
+        icon = 'U';
+        const sender = ev.sender ? `[${esc(ev.sender)}] ` : '';
+        detail = sender + esc((ev.text_preview || '').slice(0, 200));
+    } else if (event.includes('usage')) {
+        icon = '$';
+        detail = `in:${ev.input_tokens||0} out:${ev.output_tokens||0} cache:${ev.cache_read_tokens||0}`;
+    } else {
+        icon = '?';
+        detail = esc(JSON.stringify(ev).slice(0, 150));
+    }
+
+    return `
+        <div class="activity-item">
+            <span class="activity-time">${esc(time)}</span>
+            <span class="activity-icon">${icon}</span>
+            <span class="activity-body">${detail}</span>
+        </div>
+    `;
+}
+
+// ---------------------------------------------------------------------------
 // Terminal overlay
 // ---------------------------------------------------------------------------
 

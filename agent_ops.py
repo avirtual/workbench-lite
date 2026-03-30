@@ -14,6 +14,49 @@ log = logging.getLogger("agent_ops")
 _PORT = int(os.environ.get("WORKBENCH_PORT", "9800"))
 _HOST = os.environ.get("WORKBENCH_HOST", "127.0.0.1")
 _MCP_URL = f"http://{_HOST}:{_PORT}/mcp"
+_SESSIONS_DIR = Path(os.environ.get("WB_SESSIONS_DIR", "/tmp/basic-wb-sessions"))
+_SCRIPT_DIR = Path(__file__).parent
+
+import uuid
+
+def _generate_session_id(name: str) -> str:
+    """Generate a deterministic session ID for a Claude Code agent."""
+    ns = uuid.uuid5(uuid.NAMESPACE_DNS, "workbench-lite.session")
+    return str(uuid.uuid5(ns, f"{name}-{time.time()}"))
+
+
+def _claude_projects_dir(cwd: str) -> Path:
+    """Get the Claude Code projects dir for a given working directory."""
+    encoded = cwd.replace("/", "-")
+    return Path.home() / ".claude" / "projects" / encoded
+
+
+def _start_activity_parser(name: str, session_id: str, cwd: str):
+    """Create JSONL symlink and start activity parser for an agent."""
+    _SESSIONS_DIR.mkdir(parents=True, exist_ok=True)
+
+    # Find the JSONL file — Claude Code stores it at ~/.claude/projects/{encoded-cwd}/{session-id}.jsonl
+    jsonl_path = _claude_projects_dir(cwd) / f"{session_id}.jsonl"
+    symlink_path = _SESSIONS_DIR / f"{name}.jsonl"
+
+    # Create/update symlink
+    try:
+        if symlink_path.is_symlink() or symlink_path.exists():
+            symlink_path.unlink()
+        symlink_path.symlink_to(jsonl_path)
+    except Exception as e:
+        log.warning(f"Failed to create JSONL symlink for {name}: {e}")
+        return
+
+    # Start activity parser as background process
+    parser_script = _SCRIPT_DIR / "activity_parser.py"
+    if parser_script.exists():
+        import subprocess as _sp
+        _sp.Popen(
+            ["python3", str(parser_script), name, "--sessions-dir", str(_SESSIONS_DIR)],
+            stdout=_sp.DEVNULL, stderr=_sp.DEVNULL,
+        )
+        log.info(f"Activity parser started for {name}")
 
 # -- tmux helpers ----------------------------------------------------------
 
@@ -145,8 +188,9 @@ def _launch_and_orient(name, cwd, model, prompt, role, db_conn, workbench_url):
     """Create tmux session, start Claude Code, wait for prompt, inject orient."""
     session = _session_name(name)
     mcp_file = _write_mcp_config(name, workbench_url)
+    session_id = _generate_session_id(name)
     model_flag = f" --model {model}" if model and model.lower() != "default" else ""
-    cmd = f"claude --dangerously-skip-permissions{model_flag} --mcp-config {mcp_file}"
+    cmd = f"claude --dangerously-skip-permissions{model_flag} --session-id {session_id} --mcp-config {mcp_file}"
 
     _tmux_kill(session)
     _run(f"tmux new-session -d -s {session} -x 200 -y 50 -c '{cwd}' {cmd}")
@@ -158,6 +202,12 @@ def _launch_and_orient(name, cwd, model, prompt, role, db_conn, workbench_url):
     if not _wait_for_prompt(session, timeout=120):
         _tmux_kill(session)
         return {"error": "Timed out waiting for Claude Code prompt."}
+
+    # Start activity parser (tails JSONL → .activity file)
+    _start_activity_parser(name, session_id, cwd)
+
+    # Store session_id in DB for later reference
+    db_conn.execute("UPDATE agents SET updated_at = ? WHERE name = ?", (json.dumps({"session_id": session_id}), name))
 
     # Write orient file and send to Claude
     orient_path = f"/tmp/basic-wb-orient-{name}.md"

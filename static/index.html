@@ -3,14 +3,14 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Basic Workbench</title>
+    <title>Workbench Lite</title>
     <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
     <!-- Left sidebar: agents + channels -->
     <aside id="sidebar">
         <div class="sidebar-header">
-            <h1>Workbench</h1>
+            <h1>Workbench Lite</h1>
             <span id="connection-status" class="status-dot disconnected" title="Disconnected"></span>
         </div>
 
@@ -56,7 +56,12 @@
                     <button id="btn-agent-stop" class="btn-sm btn-sm-danger">Stop</button>
                 </div>
             </div>
-            <div id="agent-dm-messages" class="message-pane"></div>
+            <div class="agent-pane-tabs">
+                <button class="agent-tab active" data-tab="dms" onclick="switchAgentTab('dms')">Messages</button>
+                <button class="agent-tab" data-tab="activity" onclick="switchAgentTab('activity')">Activity</button>
+            </div>
+            <div id="agent-dm-messages" class="message-pane agent-tab-content active"></div>
+            <div id="agent-activity" class="message-pane agent-tab-content"></div>
             <form id="form-agent-dm" class="compose-bar">
                 <input type="text" id="agent-dm-input" placeholder="Message agent..." autocomplete="off">
                 <button type="submit" class="btn-send">Send</button>

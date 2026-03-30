@@ -237,7 +237,19 @@ body {
 .activity-sender { font-weight: 600; color: var(--accent); flex-shrink: 0; }
 .activity-arrow { color: var(--text-muted); flex-shrink: 0; }
 .activity-target { color: var(--text-muted); flex-shrink: 0; }
-.activity-body { color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.activity-body { color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
+.activity-icon {
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--text-muted);
+    background: var(--bg);
+    width: 22px; height: 22px;
+    border-radius: 4px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+}
 
 /* ---- Compose bar ---- */
 
@@ -263,6 +275,28 @@ body {
     outline: none;
     border-color: var(--accent);
 }
+/* Agent pane tabs */
+.agent-pane-tabs {
+    display: flex;
+    gap: 0;
+    border-bottom: 1px solid var(--border);
+    background: var(--surface);
+    flex-shrink: 0;
+}
+.agent-tab {
+    background: none;
+    border: none;
+    color: var(--text-muted);
+    padding: 8px 16px;
+    cursor: pointer;
+    font-size: 13px;
+    border-bottom: 2px solid transparent;
+}
+.agent-tab:hover { color: var(--text); }
+.agent-tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+.agent-tab-content { display: none; }
+.agent-tab-content.active { display: block; flex: 1; }
+
 .btn-send {
     background: var(--accent);
     color: #fff;
