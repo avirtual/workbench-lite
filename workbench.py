@@ -333,9 +333,17 @@ async def api_spawn_agent(request: Request):
     # Build agent boot prompt
     boot_prompt = _build_boot_prompt(name, role, prompt)
 
-    result = await asyncio.get_event_loop().run_in_executor(
-        None, lambda: agent_ops.spawn_agent(name, cwd, boot_prompt, model, role)
-    )
+    def _do_spawn():
+        with db() as conn:
+            return agent_ops.spawn_agent(name, cwd, boot_prompt, model, conn, role=role)
+    try:
+        result = await asyncio.get_event_loop().run_in_executor(None, _do_spawn)
+    except Exception as e:
+        log.error(f"Spawn failed for '{name}': {e}")
+        return JSONResponse({"error": str(e)}, status_code=500)
+
+    if result.get("error"):
+        return JSONResponse(result, status_code=400)
 
     from events import event_bus
     event_bus.publish("agent_status_change", {
@@ -359,9 +367,10 @@ async def api_stop_agent(request: Request):
 async def api_restart_agent(request: Request):
     import agent_ops
     name = request.path_params["name"]
-    result = await asyncio.get_event_loop().run_in_executor(
-        None, lambda: agent_ops.restart_agent(name)
-    )
+    def _do_restart():
+        with db() as conn:
+            return agent_ops.restart_agent(name, conn)
+    result = await asyncio.get_event_loop().run_in_executor(None, _do_restart)
     from events import event_bus
     event_bus.publish("agent_status_change", {
         "agent": name, "status": "alive", "ts": now_iso()
