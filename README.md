@@ -13,6 +13,7 @@ You have repositories. You want Claude Code agents working on them — communica
 ```bash
 git clone <repo-url>
 cd basic-workbench
+cp .env.example .env          # edit .env to change port, host, etc.
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
@@ -89,15 +90,16 @@ The review discipline comes from prompts, not system enforcement. Simple, powerf
 Single Python process. SQLite database (one file). No external services.
 
 ```
-workbench.py     — Server: DB, MCP tools, REST API        (510 lines)
-agent_ops.py     — Agent lifecycle via tmux                (274 lines)
-messaging.py     — DMs + channels                          (267 lines)
-memory.py        — Key/value persistence                   (165 lines)
-events.py        — SSE real-time updates                   (134 lines)
-static/          — Web dashboard                           (745 lines)
+workbench.py        — Server: DB, MCP tools, REST API        (~800 lines)
+agent_ops.py        — Agent lifecycle via tmux                (~350 lines)
+messaging.py        — DMs + channels                          (~270 lines)
+memory.py           — Key/value persistence                   (~165 lines)
+events.py           — SSE real-time updates                   (~135 lines)
+activity_parser.py  — JSONL→activity stream parser            (~290 lines)
+static/             — Web dashboard (HTML + JS + CSS)         (~1060 lines)
 ```
 
-**Total: ~2,100 lines.** That's the whole thing.
+**Total: ~3,100 lines.** That's the whole thing.
 
 ## Configuration
 
@@ -114,7 +116,7 @@ Copy `.env.example` to `.env` and adjust:
 - Python 3.11+
 - Claude Code CLI
 - tmux
-- Python packages: fastapi, uvicorn, mcp-sdk, starlette
+- Python packages: fastapi, uvicorn, mcp-sdk, starlette, python-dotenv
 
 No npm. No build step. No Docker. No external databases.
 

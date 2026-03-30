@@ -17,6 +17,9 @@ from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 
+from dotenv import load_dotenv
+load_dotenv()
+
 import uvicorn
 from starlette.applications import Starlette
 from starlette.requests import Request
@@ -612,6 +615,7 @@ RULES:
 - Check for messages regularly with check(). Operator messages appear as DMs.
 - When you see [DM from X], reply with direct_message(to="X").
 - Post to #review when you want feedback on your work.
+- Only message when you have something substantive to add, or when directly addressed. Don't ack for the sake of acking. Don't narrate what you're about to do — just do it.
 - On startup, check memory_list() for saved state from previous sessions. Load relevant memories before scanning the repo.
 - Save important findings with memory_save(key="...", value="...") so you don't lose them on restart.
 
@@ -635,6 +639,7 @@ RULES:
 - Check for messages regularly with check(). Operator messages appear as DMs.
 - When you see [DM from X], reply with direct_message(to="X").
 - You are subscribed to #review. When agents post there, critically review their work.
+- Only message when you have something substantive to add, or when directly addressed. Don't ack for the sake of acking.
 
 REVIEW FORMAT:
 For each review, respond with severity-tagged findings:
