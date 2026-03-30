@@ -304,7 +304,7 @@ document.getElementById('form-agent-dm').addEventListener('submit', async (e) =>
             method: 'POST', body: JSON.stringify({ body: text })
         });
         input.value = '';
-        loadAgentMessages(selectedAgent);
+        loadAgentStream(selectedAgent);
     } catch (err) {
         alert(`Failed: ${err.message}`);
     }
