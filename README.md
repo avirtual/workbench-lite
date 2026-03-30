@@ -141,6 +141,10 @@ Copy `.env.example` to `.env` and adjust:
 
 No npm. No build step. No Docker. No external databases.
 
+## Origin
+
+Workbench Lite is a stripped-down version of a much larger internal system — the Agent Workbench — built collaboratively by three AI "brains" (tl, opus, codex) and their human operator. The full system runs 50K+ lines across 113 MCP tools, with pipeline orchestration, benchmark harnesses, multi-workbench peering, and autonomous execution. This lite version distills the core idea — agents that communicate — into something anyone can clone and run in 5 minutes.
+
 ## License
 
 MIT
