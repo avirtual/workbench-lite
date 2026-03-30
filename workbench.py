@@ -682,10 +682,24 @@ def _inject_message_to_tmux(session: str, text: str):
 def _build_boot_prompt(name: str, role: str, user_prompt: str) -> str:
     with db() as conn:
         agents = conn.execute("SELECT name FROM agents WHERE status = 'alive'").fetchall()
+        # Get agent's saved memories to include in orient
+        memories = conn.execute(
+            "SELECT key, updated_at FROM memories WHERE owner = ? OR shared = 1 "
+            "ORDER BY updated_at DESC LIMIT 20", (name,)
+        ).fetchall()
     agent_list = ", ".join(a["name"] for a in agents) or "(none yet)"
 
     template = _REVIEWER_PROMPT if role == "reviewer" else _DEVELOPER_PROMPT
-    return template.format(name=name, agent_list=agent_list, user_prompt=user_prompt)
+    prompt = template.format(name=name, agent_list=agent_list, user_prompt=user_prompt)
+
+    # Append memory index if agent has saved memories
+    if memories:
+        prompt += "\n\nSAVED MEMORIES (load with memory_get before re-scanning):\n"
+        for m in memories:
+            prompt += f"  - {m['key']} (updated: {m['updated_at'][:10]})\n"
+        prompt += "Load these with memory_get(key=...) BEFORE scanning the repo. Only re-scan if memories don't have what you need.\n"
+
+    return prompt
 
 
 # ---------------------------------------------------------------------------
