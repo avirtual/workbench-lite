@@ -241,6 +241,14 @@ def run(agent: str, sessions_dir: str | None = None):
                 last_action = action
                 _emit(EVENT_ACTION, dict(action), ts)
 
+        # Skip streaming partials for classified events — only process the
+        # final assistant message (with stop_reason) to avoid 3x duplicates.
+        # ACTION events above still stream in real-time for UI responsiveness.
+        if entry.get("type") == "assistant":
+            stop = entry.get("message", {}).get("stop_reason")
+            if stop is None:
+                return  # streaming partial — skip
+
         etype = classify(entry)
         if not etype: return
         payload = extract(etype, entry)
