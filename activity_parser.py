@@ -72,7 +72,7 @@ def _summarize_tool_input(tool_name: str, tool_input: dict) -> str:
     if raw == "post":
         return f"#{tool_input.get('channel','?')}: {tool_input.get('body','')}"
     if raw in ("memory_save", "memory_get"):
-        return f"{raw}({tool_input.get('key','?')})"
+        return tool_input.get('key', '?')
     if raw == "recall":
         return f"recall({tool_input.get('query','?')!r})"
     if raw == "subscribe":

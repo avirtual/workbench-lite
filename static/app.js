@@ -148,13 +148,17 @@ async function loadAgentStream(name) {
         apiFetch(`/api/agents/${name}/messages?limit=100`).catch(() => []),
     ]);
 
-    // Merge and sort by timestamp
+    // Deduplicate: activity already includes user_message events that correspond to DB messages
+    // Only add DB messages that are operator-originated (not already in activity)
     const items = [];
     for (const ev of activity) {
         items.push({ ts: ev.ts || '', src: 'activity', data: ev });
     }
+    // Only add operator messages from DB (agent messages already appear as activity events)
     for (const m of msgs) {
-        items.push({ ts: m.created_at || '', src: 'message', data: m });
+        if (m.from_agent === 'operator') {
+            items.push({ ts: m.created_at || '', src: 'message', data: m });
+        }
     }
     items.sort((a, b) => a.ts.localeCompare(b.ts));
 

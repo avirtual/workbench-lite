@@ -197,6 +197,10 @@ def _register_tools():
         with db() as conn:
             conn.execute("UPDATE agents SET status = 'alive', updated_at = ? WHERE name = ?",
                         (now_iso(), name))
+            # Initialize check cursor to latest message so check() doesn't return history
+            if name not in _agent_last_check:
+                row = conn.execute("SELECT MAX(id) as max_id FROM messages").fetchone()
+                _agent_last_check[name] = row["max_id"] or 0 if row else 0
         log.info(f"Agent '{name}' registered (session={sk[:8] if sk else '?'}...)")
         return json.dumps({"status": "registered", "name": name})
 
