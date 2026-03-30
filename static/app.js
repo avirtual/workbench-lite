@@ -121,48 +121,30 @@ function showActivityFeed() {
 }
 
 async function loadActivity() {
-    // Combine recent messages across all channels + DMs
-    let allMsgs = [];
-    try {
-        const channels = await apiFetch('/api/channels');
-        for (const ch of channels.slice(0, 10)) {
-            const msgs = await apiFetch(`/api/channels/${ch.channel}/messages?limit=20`);
-            allMsgs.push(...msgs.map(m => ({ ...m, _type: 'channel' })));
-        }
-        const agents = await apiFetch('/api/agents');
-        for (const a of agents.slice(0, 10)) {
-            const msgs = await apiFetch(`/api/agents/${a.name}/messages?limit=20`);
-            allMsgs.push(...msgs.map(m => ({ ...m, _type: 'dm' })));
-        }
-    } catch (_) {}
-
-    // Dedupe by id and sort by time
-    const seen = new Set();
-    allMsgs = allMsgs.filter(m => { if (seen.has(m.id)) return false; seen.add(m.id); return true; });
-    allMsgs.sort((a, b) => (a.created_at || '').localeCompare(b.created_at || ''));
-    allMsgs = allMsgs.slice(-50);
-
+    const msgs = await apiFetch('/api/activity?limit=100');
     const pane = document.getElementById('activity-feed');
-    if (!allMsgs.length) {
+    if (!msgs.length) {
         pane.innerHTML = '<p class="placeholder">No activity yet. Spawn some agents and start talking!</p>';
         return;
     }
-    pane.innerHTML = allMsgs.map(m => {
+    const wasAtBottom = pane.scrollHeight - pane.scrollTop - pane.clientHeight < 50;
+    pane.innerHTML = msgs.map(m => {
         const time = m.created_at ? new Date(m.created_at).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'}) : '';
         const sender = m.from_agent || '?';
-        const target = m.channel ? `#${m.channel}` : (m.to_agent || '');
-        const body = (m.body || '').slice(0, 120);
+        const isOp = sender === 'operator';
+        const target = m.channel ? `#${m.channel}` : (m.to_agent ? `@${m.to_agent}` : '');
+        const body = (m.body || '').slice(0, 200);
         return `
-            <div class="activity-item">
+            <div class="activity-item" onclick="${m.channel ? `selectChannel('${esc(m.channel)}')` : (m.to_agent ? `selectAgent('${esc(m.to_agent)}')` : '')}">
                 <span class="activity-time">${esc(time)}</span>
-                <span class="activity-sender">${esc(sender)}</span>
+                <span class="activity-sender ${isOp ? 'op' : ''}">${esc(sender)}</span>
                 <span class="activity-arrow">&rarr;</span>
                 <span class="activity-target">${esc(target)}</span>
                 <span class="activity-body">${esc(body)}</span>
             </div>
         `;
     }).join('');
-    pane.scrollTop = pane.scrollHeight;
+    if (wasAtBottom) pane.scrollTop = pane.scrollHeight;
 }
 
 // ---------------------------------------------------------------------------
@@ -311,6 +293,8 @@ function connectSSE() {
         // Refresh current view
         if (selectedAgent) loadAgentMessages(selectedAgent);
         if (selectedChannel) loadChannelMessages(selectedChannel);
+        // Always refresh activity + channel list for real-time feel
+        if (document.getElementById('pane-activity').classList.contains('active')) loadActivity();
         loadChannelList();
     });
 

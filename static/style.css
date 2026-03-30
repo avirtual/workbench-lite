@@ -226,7 +226,12 @@ body {
     display: flex;
     gap: 8px;
     align-items: baseline;
+    cursor: pointer;
+    border-radius: 4px;
+    padding: 6px 8px;
+    margin: 0 -8px;
 }
+.activity-item:hover { background: var(--surface2); }
 .activity-item + .activity-item { border-top: 1px solid var(--border); }
 .activity-time { color: var(--text-muted); font-size: 11px; flex-shrink: 0; width: 55px; }
 .activity-sender { font-weight: 600; color: var(--accent); flex-shrink: 0; }

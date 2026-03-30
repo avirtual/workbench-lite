@@ -443,6 +443,18 @@ async def api_send_dm(request: Request):
     return JSONResponse({"status": "sent"})
 
 
+async def api_activity(request: Request):
+    """GET /api/activity — unified feed of all messages (DMs + channels), most recent first."""
+    limit = int(request.query_params.get("limit", "100"))
+    with db() as conn:
+        msgs = conn.execute(
+            "SELECT id, from_agent, to_agent, channel, body, type, created_at "
+            "FROM messages ORDER BY id DESC LIMIT ?", (limit,)
+        ).fetchall()
+    # Return in chronological order
+    return JSONResponse([dict(m) for m in reversed(msgs)])
+
+
 async def api_feed_stream(request: Request):
     from events import sse_stream_handler
     return await sse_stream_handler(request)
@@ -518,6 +530,7 @@ routes = [
     Route("/api/channels/{name}/messages", api_post_to_channel, methods=["POST"]),
     Route("/api/agents/{name}/messages", api_agent_messages, methods=["GET"]),
     Route("/api/agents/{name}/messages", api_send_dm, methods=["POST"]),
+    Route("/api/activity", api_activity, methods=["GET"]),
     Route("/api/feed/stream", api_feed_stream, methods=["GET"]),
     Mount("/static", StaticFiles(directory=str(SCRIPT_DIR / "static")), name="static"),
     # MCP server endpoint for Claude Code agents
