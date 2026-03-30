@@ -10,6 +10,11 @@ from pathlib import Path
 
 log = logging.getLogger("agent_ops")
 
+# Read port from env so MCP config matches the running server
+_PORT = int(os.environ.get("WORKBENCH_PORT", "9800"))
+_HOST = os.environ.get("WORKBENCH_HOST", "127.0.0.1")
+_MCP_URL = f"http://{_HOST}:{_PORT}/mcp"
+
 # -- tmux helpers ----------------------------------------------------------
 
 def _run(cmd: str, **kw) -> subprocess.CompletedProcess:
@@ -166,7 +171,7 @@ def _launch_and_orient(name, cwd, model, prompt, role, db_conn, workbench_url):
 
 def spawn_agent(name: str, cwd: str, prompt: str, model: str, db_conn, *,
                 role: str | None = None,
-                workbench_url: str = "http://127.0.0.1:9000/mcp") -> dict:
+                workbench_url: str = _MCP_URL) -> dict:
     """Spawn a new Claude Code agent in a tmux session.
     If a stopped agent with the same name exists, revives it via restart."""
     err = _validate_name(name)
@@ -226,7 +231,7 @@ def stop_agent(name: str, db_conn) -> dict:
 
 
 def restart_agent(name: str, db_conn, *,
-                  workbench_url: str = "http://127.0.0.1:9000/mcp") -> dict:
+                  workbench_url: str = _MCP_URL) -> dict:
     """Restart an agent: stop + spawn with the same config from DB."""
     agent = db_conn.execute(
         "SELECT name, status, model, cwd, prompt, role FROM agents WHERE name = ?", (name,)
