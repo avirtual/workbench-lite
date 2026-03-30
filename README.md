@@ -13,9 +13,11 @@ You have repositories. You want Claude Code agents working on them — communica
 ```bash
 git clone <repo-url>
 cd basic-workbench
-pip3 install -r requirements.txt
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
 ./scripts/preflight.sh
-python3 workbench.py
+python workbench.py
 ```
 
 Open http://127.0.0.1:9800 in your browser.
