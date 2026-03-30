@@ -256,16 +256,14 @@ def _register_tools():
             return json.dumps({"error": "Not registered."})
         with db() as conn:
             result = messaging.post_to_channel(conn, name, channel, body, type)
-            # Inject into all subscribed agents' tmux (except sender)
-            subs = conn.execute(
-                "SELECT s.agent, a.tmux_session FROM subscriptions s "
-                "JOIN agents a ON s.agent = a.name "
-                "WHERE s.channel = ? AND a.status = 'alive' AND s.agent != ?",
-                (channel, name)
+            # Inject into all alive agents' tmux (except sender)
+            agents = conn.execute(
+                "SELECT name, tmux_session FROM agents WHERE status = 'alive' AND name != ?",
+                (name,)
             ).fetchall()
-            for sub in subs:
-                if sub["tmux_session"]:
-                    _inject_message_to_tmux(sub["tmux_session"], f"[#{channel} from {name}] {body}")
+            for a in agents:
+                if a["tmux_session"]:
+                    _inject_message_to_tmux(a["tmux_session"], f"[#{channel} from {name}] {body}")
         msg_id = result.get("id") if isinstance(result, dict) else result
         from events import event_bus
         event_bus.publish("new_message", {
@@ -488,6 +486,15 @@ async def api_post_to_channel(request: Request):
         return JSONResponse({"error": "body required"}, status_code=400)
     with db() as conn:
         result = messaging.post_to_channel(conn, "operator", channel, text)
+        # Inject into all alive agents' tmux
+        agents = conn.execute(
+            "SELECT name, tmux_session FROM agents WHERE status = 'alive'"
+        ).fetchall()
+        for a in agents:
+            if a["tmux_session"]:
+                await asyncio.get_event_loop().run_in_executor(
+                    None, lambda s=a["tmux_session"]: _inject_message_to_tmux(s, f"[#{channel} from operator] {text}")
+                )
     from events import event_bus
     msg_id = result.get("id") if isinstance(result, dict) else result
     event_bus.publish("new_message", {
