@@ -13,7 +13,7 @@ You have repositories. You want Claude Code agents working on them — communica
 ```bash
 git clone <repo-url>
 cd basic-workbench
-pip install -r requirements.txt
+pip3 install -r requirements.txt
 ./scripts/preflight.sh
 python3 workbench.py
 ```
