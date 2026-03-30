@@ -41,6 +41,7 @@ async function selectAgent(name) {
     document.getElementById('agent-dm-input').focus();
 
     loadAgentStream(name);
+    updateAgentButtons();
     if (streamTimer) clearInterval(streamTimer);
     streamTimer = setInterval(() => loadAgentStream(selectedAgent), 3000);
 }
@@ -268,18 +269,44 @@ function closeTerminal() {
 // Agent actions
 // ---------------------------------------------------------------------------
 
-document.getElementById('btn-agent-stop').addEventListener('click', async () => {
+document.getElementById('btn-agent-toggle').addEventListener('click', async () => {
     if (!selectedAgent) return;
-    if (!confirm(`Stop agent "${selectedAgent}"?`)) return;
-    await apiFetch(`/api/agents/${selectedAgent}`, { method: 'DELETE' });
+    const btn = document.getElementById('btn-agent-toggle');
+    if (btn.textContent.trim() === 'Stop') {
+        if (!confirm(`Stop agent "${selectedAgent}"?`)) return;
+        await apiFetch(`/api/agents/${selectedAgent}`, { method: 'DELETE' });
+    } else {
+        await apiFetch(`/api/agents/${selectedAgent}/restart`, { method: 'POST' });
+    }
     loadAgents();
+    updateAgentButtons();
 });
 
-document.getElementById('btn-agent-restart').addEventListener('click', async () => {
+document.getElementById('btn-agent-delete').addEventListener('click', async () => {
     if (!selectedAgent) return;
-    await apiFetch(`/api/agents/${selectedAgent}/restart`, { method: 'POST' });
+    if (!confirm(`Delete agent "${selectedAgent}"? This removes the agent and its message history.`)) return;
+    await apiFetch(`/api/agents/${selectedAgent}/delete`, { method: 'POST' });
+    selectedAgent = null;
+    showPane('pane-activity');
     loadAgents();
+    loadActivity();
 });
+
+async function updateAgentButtons() {
+    if (!selectedAgent) return;
+    try {
+        const agents = await apiFetch('/api/agents');
+        const agent = agents.find(a => a.name === selectedAgent);
+        const btn = document.getElementById('btn-agent-toggle');
+        if (agent && agent.status === 'alive') {
+            btn.textContent = 'Stop';
+            btn.className = 'btn-sm btn-sm-danger';
+        } else {
+            btn.textContent = 'Start';
+            btn.className = 'btn-sm btn-sm-success';
+        }
+    } catch (_) {}
+}
 
 // ---------------------------------------------------------------------------
 // Compose: send messages

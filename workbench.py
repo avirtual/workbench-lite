@@ -443,6 +443,25 @@ async def api_stop_agent(request: Request):
     return JSONResponse({"status": "stopped", "agent": name})
 
 
+async def api_delete_agent(request: Request):
+    """POST /api/agents/:name/delete — remove agent and its messages from DB."""
+    import agent_ops
+    name = request.path_params["name"]
+    with db() as conn:
+        agent = conn.execute("SELECT name, status FROM agents WHERE name = ?", (name,)).fetchone()
+        if not agent:
+            return JSONResponse({"error": "not found"}, status_code=404)
+        if agent["status"] == "alive":
+            agent_ops.stop_agent(name, conn)
+        conn.execute("DELETE FROM messages WHERE from_agent = ? OR to_agent = ?", (name, name))
+        conn.execute("DELETE FROM memories WHERE owner = ?", (name,))
+        conn.execute("DELETE FROM subscriptions WHERE agent = ?", (name,))
+        conn.execute("DELETE FROM agents WHERE name = ?", (name,))
+    from events import event_bus
+    event_bus.publish("agent_status_change", {"agent": name, "status": "deleted", "ts": now_iso()})
+    return JSONResponse({"status": "deleted", "agent": name})
+
+
 async def api_restart_agent(request: Request):
     import agent_ops
     name = request.path_params["name"]
@@ -729,6 +748,7 @@ routes = [
     Route("/api/agents/{name}", api_get_agent, methods=["GET"]),
     Route("/api/agents/{name}", api_stop_agent, methods=["DELETE"]),
     Route("/api/agents/{name}/restart", api_restart_agent, methods=["POST"]),
+    Route("/api/agents/{name}/delete", api_delete_agent, methods=["POST"]),
     Route("/api/channels", api_list_channels, methods=["GET"]),
     Route("/api/channels/{name}/messages", api_channel_messages, methods=["GET"]),
     Route("/api/channels/{name}/messages", api_post_to_channel, methods=["POST"]),
