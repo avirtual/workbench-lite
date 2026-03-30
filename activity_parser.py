@@ -228,17 +228,6 @@ def run(agent: str, sessions_dir: str | None = None):
         ts = entry.get("timestamp") or entry.get("ts") or ""
 
         if entry.get("type") == "assistant":
-            # Skip streaming partials — only process completed responses
-            msg = entry.get("message", {})
-            stop_reason = msg.get("stop_reason")
-            if stop_reason is None:
-                # Still streaming — update action state but don't emit tool/message events
-                action = extract_current_action(entry)
-                if action and action != last_action:
-                    last_action = action
-                    _emit(EVENT_ACTION, dict(action), ts)
-                return
-
             usage = extract_usage(entry)
             if usage:
                 rid = usage.get("request_id", "")
