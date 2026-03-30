@@ -220,7 +220,7 @@ def _launch_and_orient(name, cwd, model, prompt, role, db_conn, workbench_url):
 # -- Public API ------------------------------------------------------------
 
 def spawn_agent(name: str, cwd: str, prompt: str, model: str, db_conn, *,
-                role: str | None = None,
+                role: str | None = None, user_prompt: str = "",
                 workbench_url: str = _MCP_URL) -> dict:
     """Spawn a new Claude Code agent in a tmux session.
     If a stopped agent with the same name exists, revives it via restart."""
@@ -251,7 +251,7 @@ def spawn_agent(name: str, cwd: str, prompt: str, model: str, db_conn, *,
     db_conn.execute(
         "INSERT INTO agents (name, status, model, cwd, prompt, role, tmux_session, created_at, updated_at) "
         "VALUES (?, 'alive', ?, ?, ?, ?, ?, ?, ?)",
-        (name, model or "sonnet", cwd, prompt, role or "developer", _session_name(name), now, now))
+        (name, model or "sonnet", cwd, user_prompt or prompt, role or "developer", _session_name(name), now, now))
     db_conn.commit()
     # Auto-subscribe reviewer agents to #review
     if role == "reviewer":
@@ -280,7 +280,7 @@ def stop_agent(name: str, db_conn) -> dict:
     return {"status": "ok"}
 
 
-def restart_agent(name: str, db_conn, *,
+def restart_agent(name: str, db_conn, boot_prompt_override: str = None, *,
                   workbench_url: str = _MCP_URL) -> dict:
     """Restart an agent: stop + spawn with the same config from DB."""
     agent = db_conn.execute(
@@ -293,9 +293,10 @@ def restart_agent(name: str, db_conn, *,
     time.sleep(0.5)
 
     cwd = agent["cwd"] or os.getcwd()
+    prompt = boot_prompt_override or agent["prompt"] or ""
     result = _launch_and_orient(
         name, cwd, agent["model"] or "sonnet",
-        agent["prompt"] or "", agent["role"], db_conn, workbench_url)
+        prompt, agent["role"], db_conn, workbench_url)
     status = "alive" if "error" not in result else "stopped"
     db_conn.execute(
         "UPDATE agents SET status=?, updated_at=? WHERE name=?", (status, _now(), name))

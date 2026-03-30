@@ -401,12 +401,13 @@ async def api_spawn_agent(request: Request):
         if existing:
             return JSONResponse({"error": f"agent '{name}' already exists"}, status_code=409)
 
-    # Build agent boot prompt
+    # Build agent boot prompt — pass raw user prompt to agent_ops, render at launch time
     boot_prompt = _build_boot_prompt(name, role, prompt)
 
     def _do_spawn():
         with db() as conn:
-            return agent_ops.spawn_agent(name, cwd, boot_prompt, model, conn, role=role)
+            return agent_ops.spawn_agent(name, cwd, boot_prompt, model, conn,
+                                        role=role, user_prompt=prompt)
     try:
         result = await asyncio.get_event_loop().run_in_executor(None, _do_spawn)
     except Exception as e:
@@ -440,7 +441,14 @@ async def api_restart_agent(request: Request):
     name = request.path_params["name"]
     def _do_restart():
         with db() as conn:
-            return agent_ops.restart_agent(name, conn)
+            # Rebuild boot prompt with current template
+            agent = conn.execute("SELECT role, prompt FROM agents WHERE name = ?", (name,)).fetchone()
+            if not agent:
+                return {"error": f"Agent '{name}' not found"}
+            user_prompt = agent["prompt"] or ""
+            role = agent["role"] or "developer"
+            boot_prompt = _build_boot_prompt(name, role, user_prompt)
+            return agent_ops.restart_agent(name, conn, boot_prompt_override=boot_prompt)
     result = await asyncio.get_event_loop().run_in_executor(None, _do_restart)
     from events import event_bus
     event_bus.publish("agent_status_change", {
