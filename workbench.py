@@ -25,9 +25,7 @@ from starlette.routing import Route, Mount
 from starlette.staticfiles import StaticFiles
 
 # MCP SDK
-from mcp.server import Server as MCPServer
-from mcp.server.sse import SseServerTransport
-from mcp.types import Tool, TextContent
+from mcp.server.fastmcp import FastMCP
 
 log = logging.getLogger("workbench")
 
@@ -145,7 +143,7 @@ def get_agent_name(connection_id: str) -> str | None:
 # MCP Server
 # ---------------------------------------------------------------------------
 
-mcp = MCPServer("basic-workbench")
+mcp = FastMCP("basic-workbench")
 
 
 def _register_tools():
@@ -190,7 +188,8 @@ def _register_tools():
     async def direct_message(name: str, to: str, body: str, type: str = "message") -> str:
         """Send a direct message to another agent."""
         with db() as conn:
-            msg_id = messaging.send_dm(conn, name, to, body, type)
+            result = messaging.send_dm(conn, name, to, body, type)
+        msg_id = result.get("id") if isinstance(result, dict) else result
         # Fire SSE event
         from events import event_bus
         event_bus.publish("new_message", {
@@ -203,7 +202,8 @@ def _register_tools():
     async def post(name: str, channel: str, body: str, type: str = "message") -> str:
         """Post a message to a channel."""
         with db() as conn:
-            msg_id = messaging.post_to_channel(conn, name, channel, body, type)
+            result = messaging.post_to_channel(conn, name, channel, body, type)
+        msg_id = result.get("id") if isinstance(result, dict) else result
         from events import event_bus
         event_bus.publish("new_message", {
             "id": msg_id, "from": name, "to": None, "body": body,
@@ -471,6 +471,8 @@ routes = [
     Route("/api/agents/{name}/messages", api_agent_messages, methods=["GET"]),
     Route("/api/feed/stream", api_feed_stream, methods=["GET"]),
     Mount("/static", StaticFiles(directory=str(SCRIPT_DIR / "static")), name="static"),
+    # MCP server endpoint for Claude Code agents
+    Mount("/mcp", app=mcp.streamable_http_app()),
 ]
 
 app = Starlette(routes=routes)
