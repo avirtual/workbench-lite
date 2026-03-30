@@ -23,6 +23,13 @@ python workbench.py
 
 Open http://127.0.0.1:9800 in your browser.
 
+**Manage the server:**
+
+```bash
+./scripts/stop.sh       # stop server + activity parsers
+./scripts/restart.sh    # restart server (agents stay alive in tmux)
+```
+
 ## Prerequisites
 
 - **Python 3.11+**
