@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Basic Workbench</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <header>
+        <h1>Basic Workbench</h1>
+        <span id="connection-status" class="status-dot disconnected" title="Disconnected"></span>
+    </header>
+
+    <nav id="nav">
+        <button class="nav-btn active" data-view="agents">Agents</button>
+        <button class="nav-btn" data-view="channels">Channels</button>
+        <button class="nav-btn" data-view="messages">Messages</button>
+    </nav>
+
+    <main>
+        <!-- Agents View -->
+        <section id="view-agents" class="view active">
+            <div class="toolbar">
+                <button id="btn-add-agent" class="btn-primary">+ Add Agent</button>
+                <button id="btn-add-reviewer" class="btn-secondary">+ Spawn Reviewer</button>
+            </div>
+            <div id="agent-list" class="card-grid"></div>
+        </section>
+
+        <!-- Channels View -->
+        <section id="view-channels" class="view">
+            <div id="channel-sidebar" class="sidebar">
+                <h3>Channels</h3>
+                <ul id="channel-list"></ul>
+            </div>
+            <div id="channel-messages" class="message-pane">
+                <p class="placeholder">Select a channel to view messages</p>
+            </div>
+        </section>
+
+        <!-- Messages View -->
+        <section id="view-messages" class="view">
+            <div id="dm-sidebar" class="sidebar">
+                <h3>Agents</h3>
+                <ul id="dm-agent-list"></ul>
+            </div>
+            <div id="dm-messages" class="message-pane">
+                <p class="placeholder">Select an agent to view DMs</p>
+            </div>
+        </section>
+    </main>
+
+    <!-- Add Agent Modal -->
+    <div id="modal-add-agent" class="modal hidden">
+        <div class="modal-content">
+            <h2>Add Agent</h2>
+            <form id="form-add-agent">
+                <label>Name <input type="text" name="name" required placeholder="e.g., dev"></label>
+                <label>Repository Path <input type="text" name="cwd" required placeholder="/path/to/repo"></label>
+                <label>Role
+                    <select name="role">
+                        <option value="developer">Developer</option>
+                        <option value="reviewer">Reviewer</option>
+                        <option value="lead">Lead</option>
+                        <option value="custom">Custom</option>
+                    </select>
+                </label>
+                <label>Model
+                    <select name="model">
+                        <option value="sonnet">Sonnet</option>
+                        <option value="opus">Opus</option>
+                        <option value="haiku">Haiku</option>
+                    </select>
+                </label>
+                <label>Prompt <textarea name="prompt" rows="4" placeholder="What should this agent do?"></textarea></label>
+                <div class="form-actions">
+                    <button type="submit" class="btn-primary">Spawn</button>
+                    <button type="button" class="btn-cancel" onclick="closeModal()">Cancel</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Agent Detail Modal -->
+    <div id="modal-agent-detail" class="modal hidden">
+        <div class="modal-content modal-wide">
+            <div class="modal-header">
+                <h2 id="detail-agent-name"></h2>
+                <div class="detail-actions">
+                    <button id="btn-restart-agent" class="btn-secondary">Restart</button>
+                    <button id="btn-stop-agent" class="btn-danger">Stop</button>
+                    <button type="button" class="btn-cancel" onclick="closeDetailModal()">Close</button>
+                </div>
+            </div>
+            <div class="detail-tabs">
+                <button class="tab-btn active" data-tab="output">Output</button>
+                <button class="tab-btn" data-tab="detail-msgs">Messages</button>
+            </div>
+            <div id="tab-output" class="tab-content active">
+                <pre id="agent-output" class="terminal"></pre>
+            </div>
+            <div id="tab-detail-msgs" class="tab-content">
+                <div id="agent-detail-messages"></div>
+            </div>
+        </div>
+    </div>
+
+    <script src="/static/app.js"></script>
+</body>
+</html>
