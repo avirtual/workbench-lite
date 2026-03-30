@@ -249,9 +249,9 @@ def spawn_agent(name: str, cwd: str, prompt: str, model: str, db_conn, *,
 
     now = _now()
     db_conn.execute(
-        "INSERT INTO agents (name, status, model, cwd, prompt, role, created_at, updated_at) "
-        "VALUES (?, 'alive', ?, ?, ?, ?, ?, ?)",
-        (name, model or "sonnet", cwd, prompt, role or "developer", now, now))
+        "INSERT INTO agents (name, status, model, cwd, prompt, role, tmux_session, created_at, updated_at) "
+        "VALUES (?, 'alive', ?, ?, ?, ?, ?, ?, ?)",
+        (name, model or "sonnet", cwd, prompt, role or "developer", _session_name(name), now, now))
     db_conn.commit()
     # Auto-subscribe reviewer agents to #review
     if role == "reviewer":

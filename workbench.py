@@ -471,9 +471,10 @@ async def api_agent_messages(request: Request):
     with db() as conn:
         msgs = conn.execute(
             "SELECT * FROM messages WHERE from_agent = ? OR to_agent = ? "
-            "ORDER BY created_at DESC LIMIT ?", (name, name, limit)
+            "ORDER BY id DESC LIMIT ?", (name, name, limit)
         ).fetchall()
-    return JSONResponse([dict(m) for m in msgs])
+    # Reverse to chronological order (oldest first, newest at bottom)
+    return JSONResponse([dict(m) for m in reversed(msgs)])
 
 
 async def api_post_to_channel(request: Request):
@@ -514,15 +515,18 @@ async def api_send_dm(request: Request):
     text = body.get("body", "").strip()
     if not text:
         return JSONResponse({"error": "body required"}, status_code=400)
+    tmux_session = None
     with db() as conn:
         result = messaging.send_dm(conn, "operator", name, text)
-        # Inject into tmux so the agent sees it immediately
         agent = conn.execute("SELECT tmux_session, status FROM agents WHERE name = ?", (name,)).fetchone()
         if agent and agent["status"] == "alive" and agent["tmux_session"]:
-            inject_text = f'[DM from operator] {text}'
-            await asyncio.get_event_loop().run_in_executor(
-                None, lambda: _inject_message_to_tmux(agent["tmux_session"], inject_text)
-            )
+            tmux_session = agent["tmux_session"]
+    # Inject into tmux outside the db context
+    if tmux_session:
+        inject_text = f'[DM from operator] {text}'
+        await asyncio.get_event_loop().run_in_executor(
+            None, lambda: _inject_message_to_tmux(tmux_session, inject_text)
+        )
     from events import event_bus
     msg_id = result.get("id") if isinstance(result, dict) else result
     event_bus.publish("new_message", {
