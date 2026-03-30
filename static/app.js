@@ -10,7 +10,6 @@ let selectedAgent = null;
 let selectedChannel = null;
 let terminalAgent = null;
 let terminalTimer = null;
-let refreshTimer = null;
 
 // ---------------------------------------------------------------------------
 // Sidebar: Agents
@@ -42,7 +41,6 @@ async function selectAgent(name) {
     document.getElementById('agent-dm-input').focus();
 
     loadAgentMessages(name);
-    startMessageRefresh(() => loadAgentMessages(selectedAgent));
 }
 
 async function loadAgentMessages(name) {
@@ -91,7 +89,6 @@ async function selectChannel(name) {
     document.getElementById('channel-input').focus();
 
     loadChannelMessages(name);
-    startMessageRefresh(() => loadChannelMessages(selectedChannel));
 }
 
 async function loadChannelMessages(channel) {
@@ -117,7 +114,6 @@ function showActivityFeed() {
     loadChannelList();
     showPane('pane-activity');
     loadActivity();
-    startMessageRefresh(loadActivity);
 }
 
 async function loadActivity() {
@@ -328,11 +324,6 @@ function resetHeartbeat() {
 function showPane(id) {
     document.querySelectorAll('.pane').forEach(p => p.classList.remove('active'));
     document.getElementById(id).classList.add('active');
-}
-
-function startMessageRefresh(fn) {
-    if (refreshTimer) clearInterval(refreshTimer);
-    refreshTimer = setInterval(fn, 5000);
 }
 
 async function apiFetch(path, opts = {}) {

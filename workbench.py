@@ -124,47 +124,88 @@ def now_iso() -> str:
 
 
 # ---------------------------------------------------------------------------
-# Agent identity tracking (MCP connection → agent name)
+# Agent identity tracking (MCP session → agent name)
 # ---------------------------------------------------------------------------
 
-_agent_connections: dict[str, str] = {}  # connection_id → agent_name
-_agent_last_check: dict[str, int] = {}   # agent_name → last seen message id
+_session_agent: dict[str, str] = {}   # session_key → agent_name
+_agent_last_check: dict[str, int] = {}  # agent_name → last seen message id
+_url_agent = __import__('contextvars').ContextVar('_url_agent', default=None)
+
+from mcp.server.lowlevel.server import request_ctx as _mcp_request_ctx
+from mcp.server.fastmcp import Context
 
 
-def identify_agent(connection_id: str, name: str):
-    _agent_connections[connection_id] = name
+def _get_session_key(ctx=None) -> str | None:
+    """Get stable session key from MCP context."""
+    if ctx:
+        client_id = getattr(ctx, 'client_id', None)
+        if client_id:
+            return client_id
+        session = getattr(ctx, 'session', None)
+        if session:
+            return str(id(session))
+    # Fallback: low-level request context
+    try:
+        rctx = _mcp_request_ctx.get()
+        meta = getattr(rctx, 'meta', None)
+        if meta:
+            cid = getattr(meta, 'client_id', None) or getattr(meta, 'clientId', None)
+            if cid:
+                return cid
+        session = getattr(rctx, 'session', None)
+        return str(id(session)) if session else None
+    except LookupError:
+        return None
 
 
-def get_agent_name(connection_id: str) -> str | None:
-    return _agent_connections.get(connection_id)
+def _get_caller(ctx=None) -> str | None:
+    """Resolve agent name from MCP session. Returns None if not registered."""
+    sk = _get_session_key(ctx)
+    if sk and sk in _session_agent:
+        return _session_agent[sk]
+    # Try auto-bind from URL ?agent= parameter
+    url_name = _url_agent.get()
+    if url_name and sk:
+        _session_agent[sk] = url_name
+        log.info(f"Auto-bound agent '{url_name}' to session {sk[:8]}...")
+        # Mark alive in DB
+        with db() as conn:
+            conn.execute("UPDATE agents SET status = 'alive', updated_at = ? WHERE name = ?",
+                        (now_iso(), url_name))
+        return url_name
+    return None
 
 
 # ---------------------------------------------------------------------------
-# MCP Server
+# MCP Server with identity middleware
 # ---------------------------------------------------------------------------
 
 mcp = FastMCP("basic-workbench")
 
 
 def _register_tools():
-    """Register all 12 MCP tools."""
+    """Register MCP tools. Identity auto-resolved from session — no name param needed."""
     import messaging
     import memory as mem
 
     @mcp.tool()
-    async def register(name: str) -> str:
-        """Register with the workbench. Call this first with your agent name."""
-        # We'll get the connection ID from context in the actual MCP handler
+    async def register(name: str, ctx: Context = None) -> str:
+        """Register your identity. Call this first with your agent name."""
+        sk = _get_session_key(ctx)
+        if sk:
+            _session_agent[sk] = name
         with db() as conn:
-            agent = conn.execute("SELECT name FROM agents WHERE name = ?", (name,)).fetchone()
-            if agent:
-                conn.execute("UPDATE agents SET status = 'alive', updated_at = ? WHERE name = ?",
-                           (now_iso(), name))
+            conn.execute("UPDATE agents SET status = 'alive', updated_at = ? WHERE name = ?",
+                        (now_iso(), name))
+        log.info(f"Agent '{name}' registered (session={sk[:8] if sk else '?'}...)")
         return json.dumps({"status": "registered", "name": name})
 
     @mcp.tool()
-    async def check(name: str) -> str:
+    async def check(ctx: Context = None) -> str:
         """Check for new messages — DMs and subscribed channels."""
+        name = _get_caller(ctx)
+        if not name:
+            return json.dumps({"error": "Not registered. Call register(name=...) first."})
         last_id = _agent_last_check.get(name, 0)
         with db() as conn:
             result = messaging.check(conn, name, last_id)
@@ -178,19 +219,24 @@ def _register_tools():
         return json.dumps(result)
 
     @mcp.tool()
-    async def read_inbox(name: str, after: int = 0) -> str:
+    async def read_inbox(after: int = 0, ctx: Context = None) -> str:
         """Read direct messages addressed to you."""
+        name = _get_caller(ctx)
+        if not name:
+            return json.dumps({"error": "Not registered."})
         with db() as conn:
             msgs = messaging.read_inbox(conn, name, after)
         return json.dumps(msgs)
 
     @mcp.tool()
-    async def direct_message(name: str, to: str, body: str, type: str = "message") -> str:
+    async def direct_message(to: str, body: str, type: str = "message", ctx: Context = None) -> str:
         """Send a direct message to another agent."""
+        name = _get_caller(ctx)
+        if not name:
+            return json.dumps({"error": "Not registered."})
         with db() as conn:
             result = messaging.send_dm(conn, name, to, body, type)
         msg_id = result.get("id") if isinstance(result, dict) else result
-        # Fire SSE event
         from events import event_bus
         event_bus.publish("new_message", {
             "id": msg_id, "from": name, "to": to, "body": body,
@@ -199,8 +245,11 @@ def _register_tools():
         return json.dumps({"status": "sent", "id": msg_id})
 
     @mcp.tool()
-    async def post(name: str, channel: str, body: str, type: str = "message") -> str:
+    async def post(channel: str, body: str, type: str = "message", ctx: Context = None) -> str:
         """Post a message to a channel."""
+        name = _get_caller(ctx)
+        if not name:
+            return json.dumps({"error": "Not registered."})
         with db() as conn:
             result = messaging.post_to_channel(conn, name, channel, body, type)
         msg_id = result.get("id") if isinstance(result, dict) else result
@@ -212,8 +261,11 @@ def _register_tools():
         return json.dumps({"status": "posted", "id": msg_id, "channel": channel})
 
     @mcp.tool()
-    async def subscribe(name: str, channel: str) -> str:
+    async def subscribe(channel: str, ctx: Context = None) -> str:
         """Subscribe to a channel."""
+        name = _get_caller(ctx)
+        if not name:
+            return json.dumps({"error": "Not registered."})
         with db() as conn:
             messaging.subscribe(conn, name, channel)
         return json.dumps({"status": "subscribed", "channel": channel})
@@ -226,15 +278,17 @@ def _register_tools():
         return json.dumps(result)
 
     @mcp.tool()
-    async def memory_save(name: str, key: str, value: str, shared: bool = False) -> str:
+    async def memory_save(key: str, value: str, shared: bool = False, ctx: Context = None) -> str:
         """Save a key/value pair to memory."""
+        name = _get_caller(ctx) or "anonymous"
         with db() as conn:
             mem.memory_save(conn, name, key, value, shared)
         return json.dumps({"status": "saved", "key": key})
 
     @mcp.tool()
-    async def memory_get(name: str, key: str) -> str:
+    async def memory_get(key: str, ctx: Context = None) -> str:
         """Read a memory entry by key."""
+        name = _get_caller(ctx) or "anonymous"
         with db() as conn:
             entry = mem.memory_get(conn, name, key)
         if entry is None:
@@ -242,15 +296,17 @@ def _register_tools():
         return json.dumps(entry)
 
     @mcp.tool()
-    async def memory_list(name: str) -> str:
+    async def memory_list(ctx: Context = None) -> str:
         """List all memory keys (own + shared)."""
+        name = _get_caller(ctx) or "anonymous"
         with db() as conn:
             entries = mem.memory_list(conn, name)
         return json.dumps(entries)
 
     @mcp.tool()
-    async def memory_delete(name: str, key: str) -> str:
+    async def memory_delete(key: str, ctx: Context = None) -> str:
         """Delete a memory entry you own."""
+        name = _get_caller(ctx) or "anonymous"
         with db() as conn:
             mem.memory_delete(conn, name, key)
         return json.dumps({"status": "deleted", "key": key})
@@ -264,8 +320,11 @@ def _register_tools():
         return json.dumps(agents)
 
     @mcp.tool()
-    async def quit(name: str) -> str:
+    async def quit(ctx: Context = None) -> str:
         """Stop yourself."""
+        name = _get_caller(ctx)
+        if not name:
+            return json.dumps({"error": "Not registered."})
         import agent_ops
         with db() as conn:
             agent_ops.stop_agent(name, conn)
@@ -477,16 +536,16 @@ _DEVELOPER_PROMPT = """You are "{name}", an agent on this workbench.
 
 Other agents: {agent_list}
 
-COMMUNICATION (MCP tools — always pass name="{name}" as first argument):
-- check(name="{name}") — check for new DMs and channel messages. Call this regularly.
-- direct_message(name="{name}", to="agent_name", body="text") — DM another agent
-- post(name="{name}", channel="channel_name", body="text") — post to a channel
-- read_inbox(name="{name}") — read your DMs
-- subscribe(name="{name}", channel="channel_name") — join a channel
+COMMUNICATION (MCP tools — your identity is automatic, no need to pass your name):
+- check() — check for new DMs and channel messages. Call this regularly.
+- direct_message(to="agent_name", body="text") — DM another agent
+- post(channel="channel_name", body="text") — post to a channel
+- read_inbox() — read your DMs
+- subscribe(channel="channel_name") — join a channel
 - channels() — list available channels
 - list_agents() — see who's online
-- memory_save(name="{name}", key="k", value="v") — persist data
-- memory_get(name="{name}", key="k") — recall data
+- memory_save(key="k", value="v") — persist data
+- memory_get(key="k") — recall data
 
 RULES:
 - DM first. Use direct messages for 1:1 communication. Use channels for broadcasts.
@@ -500,12 +559,12 @@ _REVIEWER_PROMPT = """You are "{name}", a contrarian reviewer on this workbench.
 
 Other agents: {agent_list}
 
-COMMUNICATION (MCP tools — always pass name="{name}" as first argument):
-- check(name="{name}") — check for new DMs and channel messages. Call this regularly.
-- direct_message(name="{name}", to="agent_name", body="text") — DM another agent
-- post(name="{name}", channel="channel_name", body="text") — post to a channel
-- read_inbox(name="{name}") — read your DMs
-- subscribe(name="{name}", channel="channel_name") — join a channel
+COMMUNICATION (MCP tools — your identity is automatic, no need to pass your name):
+- check() — check for new DMs and channel messages. Call this regularly.
+- direct_message(to="agent_name", body="text") — DM another agent
+- post(channel="channel_name", body="text") — post to a channel
+- read_inbox() — read your DMs
+- subscribe(channel="channel_name") — join a channel
 - channels() — list available channels
 - list_agents() — see who's online
 
@@ -525,10 +584,30 @@ For each review, respond with severity-tagged findings:
 Be thorough. Challenge assumptions. Find what others miss.
 
 On startup:
-1. Call subscribe(name="{name}", channel="review")
-2. Call check(name="{name}") to see if there are messages waiting.
+1. Call register(name="{name}") to identify yourself.
+2. Call subscribe(channel="review") to join the review channel.
+3. Call check() to see if there are messages waiting.
 
 {user_prompt}"""
+
+
+def _wrap_mcp_with_identity(app):
+    """Middleware that extracts ?agent=NAME from URL and sets _url_agent contextvar."""
+    from urllib.parse import parse_qs
+
+    async def middleware(scope, receive, send):
+        if scope["type"] in ("http", "websocket"):
+            qs = parse_qs(scope.get("query_string", b"").decode())
+            agent_name = qs.get("agent", [None])[0]
+            token = _url_agent.set(agent_name)
+            try:
+                await app(scope, receive, send)
+            finally:
+                _url_agent.reset(token)
+        else:
+            await app(scope, receive, send)
+
+    return middleware
 
 
 def _inject_message_to_tmux(session: str, text: str):
@@ -577,8 +656,8 @@ routes = [
     Route("/api/feed/stream", api_feed_stream, methods=["GET"]),
     Mount("/static", StaticFiles(directory=str(SCRIPT_DIR / "static")), name="static"),
     # MCP server endpoint for Claude Code agents
-    # FastMCP serves at /mcp internally, so mount at root
-    Mount("/", app=mcp.streamable_http_app()),
+    # Middleware extracts ?agent=NAME and sets _url_agent contextvar
+    Mount("/", app=_wrap_mcp_with_identity(mcp.streamable_http_app())),
 ]
 
 async def _lifespan(app):
