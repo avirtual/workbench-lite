@@ -425,8 +425,10 @@ async def api_post_to_channel(request: Request):
 
 
 async def api_send_dm(request: Request):
-    """POST /api/agents/:name/messages — operator sends DM to an agent."""
+    """POST /api/agents/:name/messages — operator sends DM to an agent.
+    Also injects the message into the agent's tmux session so it sees it."""
     import messaging
+    import agent_ops
     name = request.path_params["name"]
     body = await request.json()
     text = body.get("body", "").strip()
@@ -434,6 +436,13 @@ async def api_send_dm(request: Request):
         return JSONResponse({"error": "body required"}, status_code=400)
     with db() as conn:
         result = messaging.send_dm(conn, "operator", name, text)
+        # Inject into tmux so the agent sees it immediately
+        agent = conn.execute("SELECT tmux_session, status FROM agents WHERE name = ?", (name,)).fetchone()
+        if agent and agent["status"] == "alive" and agent["tmux_session"]:
+            inject_text = f'[DM from operator] {text}'
+            await asyncio.get_event_loop().run_in_executor(
+                None, lambda: _inject_message_to_tmux(agent["tmux_session"], inject_text)
+            )
     from events import event_bus
     msg_id = result.get("id") if isinstance(result, dict) else result
     event_bus.publish("new_message", {
@@ -466,36 +475,70 @@ async def api_feed_stream(request: Request):
 
 _DEVELOPER_PROMPT = """You are "{name}", an agent on this workbench.
 
-Other agents online: {agent_list}
+Other agents: {agent_list}
 
-Communication — use your MCP tools:
-- direct_message(to, body) to message another agent
-- post(channel, body) to broadcast to a channel
-- check() to see new messages
+COMMUNICATION (MCP tools — always pass name="{name}" as first argument):
+- check(name="{name}") — check for new DMs and channel messages. Call this regularly.
+- direct_message(name="{name}", to="agent_name", body="text") — DM another agent
+- post(name="{name}", channel="channel_name", body="text") — post to a channel
+- read_inbox(name="{name}") — read your DMs
+- subscribe(name="{name}", channel="channel_name") — join a channel
+- channels() — list available channels
+- list_agents() — see who's online
+- memory_save(name="{name}", key="k", value="v") — persist data
+- memory_get(name="{name}", key="k") — recall data
+
+RULES:
+- DM first. Use direct messages for 1:1 communication. Use channels for broadcasts.
+- Check for messages regularly with check(). Operator messages appear as DMs.
+- When you see [DM from X], reply with direct_message(to="X").
+- Post to #review when you want feedback on your work.
 
 {user_prompt}"""
 
 _REVIEWER_PROMPT = """You are "{name}", a contrarian reviewer on this workbench.
 
-Your job: when other agents post to #review, critically evaluate their work.
-
-For each review, respond with:
-## Findings
-List each finding with severity (BLOCKING / HIGH / MEDIUM / LOW):
-- What's wrong or risky
-- Why it matters
-- Concrete mitigation
-
-Be thorough. Challenge assumptions. Find what others miss.
-If the work is solid, say so — but always look for what could go wrong.
-
 Other agents: {agent_list}
 
-On startup, subscribe to #review:
-1. Call subscribe(channel="#review")
-2. Call check() periodically to watch for new posts.
+COMMUNICATION (MCP tools — always pass name="{name}" as first argument):
+- check(name="{name}") — check for new DMs and channel messages. Call this regularly.
+- direct_message(name="{name}", to="agent_name", body="text") — DM another agent
+- post(name="{name}", channel="channel_name", body="text") — post to a channel
+- read_inbox(name="{name}") — read your DMs
+- subscribe(name="{name}", channel="channel_name") — join a channel
+- channels() — list available channels
+- list_agents() — see who's online
+
+RULES:
+- DM first. Use direct messages for 1:1 communication.
+- Check for messages regularly with check(). Operator messages appear as DMs.
+- When you see [DM from X], reply with direct_message(to="X").
+- You are subscribed to #review. When agents post there, critically review their work.
+
+REVIEW FORMAT:
+For each review, respond with severity-tagged findings:
+- BLOCKING: Must fix before proceeding
+- HIGH: Significant issue, needs attention
+- MEDIUM: Worth addressing
+- LOW: Minor improvement
+
+Be thorough. Challenge assumptions. Find what others miss.
+
+On startup:
+1. Call subscribe(name="{name}", channel="review")
+2. Call check(name="{name}") to see if there are messages waiting.
 
 {user_prompt}"""
+
+
+def _inject_message_to_tmux(session: str, text: str):
+    """Inject a message into an agent's tmux session as typed input."""
+    import subprocess
+    escaped = text.replace("'", "'\\''")
+    subprocess.run(f"tmux send-keys -t {session} C-u", shell=True, capture_output=True)
+    subprocess.run(f"tmux send-keys -t {session} -l '{escaped}'", shell=True, capture_output=True)
+    time.sleep(0.3)
+    subprocess.run(f"tmux send-keys -t {session} Enter", shell=True, capture_output=True)
 
 
 def _build_boot_prompt(name: str, role: str, user_prompt: str) -> str:
