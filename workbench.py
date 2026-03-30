@@ -534,10 +534,21 @@ routes = [
     Route("/api/feed/stream", api_feed_stream, methods=["GET"]),
     Mount("/static", StaticFiles(directory=str(SCRIPT_DIR / "static")), name="static"),
     # MCP server endpoint for Claude Code agents
-    Mount("/mcp", app=mcp.streamable_http_app()),
+    # FastMCP serves at /mcp internally, so mount at root
+    Mount("/", app=mcp.streamable_http_app()),
 ]
 
-app = Starlette(routes=routes)
+async def _lifespan(app):
+    """Start MCP session manager + SSE heartbeat — Starlette Mount doesn't propagate lifespan."""
+    import contextlib
+    from events import event_bus
+    async with contextlib.AsyncExitStack() as stack:
+        await stack.enter_async_context(mcp.session_manager.run())
+        event_bus.start()
+        yield
+        event_bus.stop()
+
+app = Starlette(routes=routes, lifespan=_lifespan)
 
 
 # ---------------------------------------------------------------------------
