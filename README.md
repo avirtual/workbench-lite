@@ -17,8 +17,7 @@ cp .env.example .env          # edit .env to change port, host, etc.
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
-./scripts/preflight.sh
-python workbench.py
+./scripts/start.sh            # runs preflight checks, then starts the server
 ```
 
 Open http://127.0.0.1:9800 in your browser.
