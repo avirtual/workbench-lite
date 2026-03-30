@@ -1,137 +1,252 @@
-/* Basic Workbench — Dashboard JavaScript */
+/* Basic Workbench — Communication-first dashboard */
 
-const API = '';  // Same origin
+const API = '';
 
 // ---------------------------------------------------------------------------
 // State
 // ---------------------------------------------------------------------------
 
-let currentView = 'agents';
-let currentChannel = null;
-let currentDMAgent = null;
 let selectedAgent = null;
-let agentRefreshTimer = null;
+let selectedChannel = null;
+let terminalAgent = null;
+let terminalTimer = null;
+let refreshTimer = null;
 
 // ---------------------------------------------------------------------------
-// Navigation
-// ---------------------------------------------------------------------------
-
-document.querySelectorAll('.nav-btn').forEach(btn => {
-    btn.addEventListener('click', () => {
-        document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
-        btn.classList.add('active');
-        document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
-        const view = btn.dataset.view;
-        document.getElementById(`view-${view}`).classList.add('active');
-        currentView = view;
-        if (view === 'agents') loadAgents();
-        if (view === 'channels') loadChannels();
-        if (view === 'messages') loadDMAgents();
-    });
-});
-
-// ---------------------------------------------------------------------------
-// API Helpers
-// ---------------------------------------------------------------------------
-
-async function apiFetch(path, opts = {}) {
-    const res = await fetch(`${API}${path}`, {
-        headers: { 'Content-Type': 'application/json', ...opts.headers },
-        ...opts,
-    });
-    if (!res.ok) {
-        const err = await res.json().catch(() => ({ error: res.statusText }));
-        throw new Error(err.error || res.statusText);
-    }
-    return res.json();
-}
-
-// ---------------------------------------------------------------------------
-// Agents View
+// Sidebar: Agents
 // ---------------------------------------------------------------------------
 
 async function loadAgents() {
     const agents = await apiFetch('/api/agents');
-    const grid = document.getElementById('agent-list');
-    if (!agents.length) {
-        grid.innerHTML = '<p class="placeholder">No agents yet. Click "+ Add Agent" to get started.</p>';
+    const list = document.getElementById('agent-list');
+    list.innerHTML = agents.map(a => `
+        <li class="${selectedAgent === a.name ? 'active' : ''}"
+            onclick="selectAgent('${esc(a.name)}')">
+            <span class="agent-dot ${a.status}"></span>
+            <span>${esc(a.name)}</span>
+            <span class="agent-role">${esc(a.role || '')}</span>
+        </li>
+    `).join('') || '<li class="placeholder" style="padding:8px 16px;font-size:12px;">No agents yet</li>';
+}
+
+async function selectAgent(name) {
+    selectedAgent = name;
+    selectedChannel = null;
+    loadAgents();
+    loadChannelList();
+
+    // Show agent pane
+    showPane('pane-agent');
+    document.getElementById('agent-pane-name').textContent = name;
+    document.getElementById('agent-dm-input').placeholder = `Message ${name}...`;
+    document.getElementById('agent-dm-input').focus();
+
+    loadAgentMessages(name);
+    startMessageRefresh(() => loadAgentMessages(selectedAgent));
+}
+
+async function loadAgentMessages(name) {
+    const msgs = await apiFetch(`/api/agents/${name}/messages`);
+    const pane = document.getElementById('agent-dm-messages');
+    if (!msgs.length) {
+        pane.innerHTML = `<p class="placeholder">No messages yet. Say something!</p>`;
         return;
     }
-    grid.innerHTML = agents.map(a => `
-        <div class="agent-card" onclick="showAgentDetail('${a.name}')">
-            <div class="card-header">
-                <span class="agent-name">${esc(a.name)}</span>
-                <span class="agent-status ${a.status}">${a.status}</span>
-            </div>
-            <div class="card-meta">
-                <div>Role: ${esc(a.role || 'developer')}</div>
-                <div>Model: ${esc(a.model || 'sonnet')}</div>
-                ${a.cwd ? `<div>Repo: ${esc(a.cwd)}</div>` : ''}
-            </div>
-        </div>
+    const wasAtBottom = pane.scrollHeight - pane.scrollTop - pane.clientHeight < 50;
+    pane.innerHTML = msgs.map(renderMsg).join('');
+    if (wasAtBottom) pane.scrollTop = pane.scrollHeight;
+}
+
+// ---------------------------------------------------------------------------
+// Sidebar: Channels
+// ---------------------------------------------------------------------------
+
+async function loadChannelList() {
+    const channels = await apiFetch('/api/channels');
+    const list = document.getElementById('channel-list');
+    // Always show #general and #review, plus any with messages
+    const names = new Set(['general', 'review']);
+    channels.forEach(ch => names.add(ch.channel));
+    const counts = {};
+    channels.forEach(ch => { counts[ch.channel] = ch.message_count; });
+
+    list.innerHTML = [...names].map(ch => `
+        <li class="${selectedChannel === ch ? 'active' : ''}"
+            onclick="selectChannel('${esc(ch)}')">
+            <span>#${esc(ch)}</span>
+            ${counts[ch] ? `<span class="agent-role">${counts[ch]}</span>` : ''}
+        </li>
     `).join('');
 }
 
-// ---------------------------------------------------------------------------
-// Agent Detail Modal
-// ---------------------------------------------------------------------------
-
-async function showAgentDetail(name) {
-    selectedAgent = name;
-    const modal = document.getElementById('modal-agent-detail');
-    document.getElementById('detail-agent-name').textContent = name;
-    modal.classList.remove('hidden');
-
-    // Load agent data
-    refreshAgentDetail();
-    // Auto-refresh every 3s
-    agentRefreshTimer = setInterval(refreshAgentDetail, 3000);
-}
-
-async function refreshAgentDetail() {
-    if (!selectedAgent) return;
-    try {
-        const agent = await apiFetch(`/api/agents/${selectedAgent}`);
-        document.getElementById('agent-output').textContent = agent.output || '(no output)';
-        const msgsDiv = document.getElementById('agent-detail-messages');
-        if (agent.messages && agent.messages.length) {
-            msgsDiv.innerHTML = agent.messages.reverse().map(renderMsg).join('');
-        } else {
-            msgsDiv.innerHTML = '<p class="placeholder">No messages yet</p>';
-        }
-    } catch (e) {
-        console.error('Failed to refresh agent detail:', e);
-    }
-}
-
-function closeDetailModal() {
-    document.getElementById('modal-agent-detail').classList.add('hidden');
+async function selectChannel(name) {
+    selectedChannel = name;
     selectedAgent = null;
-    if (agentRefreshTimer) { clearInterval(agentRefreshTimer); agentRefreshTimer = null; }
+    loadAgents();
+    loadChannelList();
+
+    showPane('pane-channel');
+    document.getElementById('channel-pane-name').textContent = `#${name}`;
+    document.getElementById('channel-input').placeholder = `Post to #${name}...`;
+    document.getElementById('channel-input').focus();
+
+    loadChannelMessages(name);
+    startMessageRefresh(() => loadChannelMessages(selectedChannel));
 }
 
-// Stop/Restart buttons
-document.getElementById('btn-stop-agent').addEventListener('click', async () => {
+async function loadChannelMessages(channel) {
+    const msgs = await apiFetch(`/api/channels/${channel}/messages`);
+    const pane = document.getElementById('channel-messages');
+    if (!msgs.length) {
+        pane.innerHTML = `<p class="placeholder">No messages in #${esc(channel)} yet</p>`;
+        return;
+    }
+    const wasAtBottom = pane.scrollHeight - pane.scrollTop - pane.clientHeight < 50;
+    pane.innerHTML = msgs.map(renderMsg).join('');
+    if (wasAtBottom) pane.scrollTop = pane.scrollHeight;
+}
+
+// ---------------------------------------------------------------------------
+// Activity feed
+// ---------------------------------------------------------------------------
+
+function showActivityFeed() {
+    selectedAgent = null;
+    selectedChannel = null;
+    loadAgents();
+    loadChannelList();
+    showPane('pane-activity');
+    loadActivity();
+    startMessageRefresh(loadActivity);
+}
+
+async function loadActivity() {
+    // Combine recent messages across all channels + DMs
+    let allMsgs = [];
+    try {
+        const channels = await apiFetch('/api/channels');
+        for (const ch of channels.slice(0, 10)) {
+            const msgs = await apiFetch(`/api/channels/${ch.channel}/messages?limit=20`);
+            allMsgs.push(...msgs.map(m => ({ ...m, _type: 'channel' })));
+        }
+        const agents = await apiFetch('/api/agents');
+        for (const a of agents.slice(0, 10)) {
+            const msgs = await apiFetch(`/api/agents/${a.name}/messages?limit=20`);
+            allMsgs.push(...msgs.map(m => ({ ...m, _type: 'dm' })));
+        }
+    } catch (_) {}
+
+    // Dedupe by id and sort by time
+    const seen = new Set();
+    allMsgs = allMsgs.filter(m => { if (seen.has(m.id)) return false; seen.add(m.id); return true; });
+    allMsgs.sort((a, b) => (a.created_at || '').localeCompare(b.created_at || ''));
+    allMsgs = allMsgs.slice(-50);
+
+    const pane = document.getElementById('activity-feed');
+    if (!allMsgs.length) {
+        pane.innerHTML = '<p class="placeholder">No activity yet. Spawn some agents and start talking!</p>';
+        return;
+    }
+    pane.innerHTML = allMsgs.map(m => {
+        const time = m.created_at ? new Date(m.created_at).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'}) : '';
+        const sender = m.from_agent || '?';
+        const target = m.channel ? `#${m.channel}` : (m.to_agent || '');
+        const body = (m.body || '').slice(0, 120);
+        return `
+            <div class="activity-item">
+                <span class="activity-time">${esc(time)}</span>
+                <span class="activity-sender">${esc(sender)}</span>
+                <span class="activity-arrow">&rarr;</span>
+                <span class="activity-target">${esc(target)}</span>
+                <span class="activity-body">${esc(body)}</span>
+            </div>
+        `;
+    }).join('');
+    pane.scrollTop = pane.scrollHeight;
+}
+
+// ---------------------------------------------------------------------------
+// Terminal overlay
+// ---------------------------------------------------------------------------
+
+document.getElementById('btn-agent-output').addEventListener('click', () => {
     if (!selectedAgent) return;
+    showTerminal(selectedAgent);
+});
+
+async function showTerminal(name) {
+    terminalAgent = name;
+    document.getElementById('terminal-title').textContent = `${name} — Terminal`;
+    document.getElementById('terminal-overlay').classList.remove('hidden');
+    refreshTerminal();
+    terminalTimer = setInterval(refreshTerminal, 3000);
+}
+
+async function refreshTerminal() {
+    if (!terminalAgent) return;
+    try {
+        const agent = await apiFetch(`/api/agents/${terminalAgent}`);
+        document.getElementById('terminal-output').textContent = agent.output || '(no output)';
+    } catch (_) {}
+}
+
+function closeTerminal() {
+    document.getElementById('terminal-overlay').classList.add('hidden');
+    terminalAgent = null;
+    if (terminalTimer) { clearInterval(terminalTimer); terminalTimer = null; }
+}
+
+// ---------------------------------------------------------------------------
+// Agent actions
+// ---------------------------------------------------------------------------
+
+document.getElementById('btn-agent-stop').addEventListener('click', async () => {
+    if (!selectedAgent) return;
+    if (!confirm(`Stop agent "${selectedAgent}"?`)) return;
     await apiFetch(`/api/agents/${selectedAgent}`, { method: 'DELETE' });
-    closeDetailModal();
     loadAgents();
 });
 
-document.getElementById('btn-restart-agent').addEventListener('click', async () => {
+document.getElementById('btn-agent-restart').addEventListener('click', async () => {
     if (!selectedAgent) return;
     await apiFetch(`/api/agents/${selectedAgent}/restart`, { method: 'POST' });
-    refreshAgentDetail();
+    loadAgents();
 });
 
-// Detail tabs
-document.querySelectorAll('.tab-btn').forEach(btn => {
-    btn.addEventListener('click', () => {
-        document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
-        btn.classList.add('active');
-        document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
-        document.getElementById(`tab-${btn.dataset.tab}`).classList.add('active');
-    });
+// ---------------------------------------------------------------------------
+// Compose: send messages
+// ---------------------------------------------------------------------------
+
+document.getElementById('form-agent-dm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const input = document.getElementById('agent-dm-input');
+    const text = input.value.trim();
+    if (!text || !selectedAgent) return;
+    try {
+        await apiFetch(`/api/agents/${selectedAgent}/messages`, {
+            method: 'POST', body: JSON.stringify({ body: text })
+        });
+        input.value = '';
+        loadAgentMessages(selectedAgent);
+    } catch (err) {
+        alert(`Failed: ${err.message}`);
+    }
+});
+
+document.getElementById('form-channel-post').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const input = document.getElementById('channel-input');
+    const text = input.value.trim();
+    if (!text || !selectedChannel) return;
+    try {
+        await apiFetch(`/api/channels/${selectedChannel}/messages`, {
+            method: 'POST', body: JSON.stringify({ body: text })
+        });
+        input.value = '';
+        loadChannelMessages(selectedChannel);
+    } catch (err) {
+        alert(`Failed: ${err.message}`);
+    }
 });
 
 // ---------------------------------------------------------------------------
@@ -148,7 +263,7 @@ document.getElementById('btn-add-reviewer').addEventListener('click', () => {
     const form = document.getElementById('form-add-agent');
     form.querySelector('[name="role"]').value = 'reviewer';
     form.querySelector('[name="name"]').value = 'reviewer';
-    form.querySelector('[name="prompt"]').value = '';  // Uses preset
+    form.querySelector('[name="prompt"]').value = '';
 });
 
 function closeModal() {
@@ -171,82 +286,9 @@ document.getElementById('form-add-agent').addEventListener('submit', async (e) =
         closeModal();
         loadAgents();
     } catch (err) {
-        alert(`Failed to spawn agent: ${err.message}`);
+        alert(`Failed: ${err.message}`);
     }
 });
-
-// ---------------------------------------------------------------------------
-// Channels View
-// ---------------------------------------------------------------------------
-
-async function loadChannels() {
-    const channels = await apiFetch('/api/channels');
-    const list = document.getElementById('channel-list');
-    if (!channels.length) {
-        list.innerHTML = '<li class="placeholder">No channels yet</li>';
-        return;
-    }
-    list.innerHTML = channels.map(ch => `
-        <li onclick="selectChannel('${esc(ch.channel)}')"
-            class="${currentChannel === ch.channel ? 'active' : ''}">
-            #${esc(ch.channel)} <small>(${ch.count})</small>
-        </li>
-    `).join('');
-    if (currentChannel) loadChannelMessages(currentChannel);
-}
-
-async function selectChannel(name) {
-    currentChannel = name;
-    document.querySelectorAll('#channel-list li').forEach(li => li.classList.remove('active'));
-    // Re-highlight
-    loadChannels();
-    loadChannelMessages(name);
-}
-
-async function loadChannelMessages(channel) {
-    const msgs = await apiFetch(`/api/channels/${channel}/messages`);
-    const pane = document.getElementById('channel-messages');
-    if (!msgs.length) {
-        pane.innerHTML = `<p class="placeholder">No messages in #${esc(channel)}</p>`;
-        return;
-    }
-    pane.innerHTML = msgs.map(renderMsg).join('');
-    pane.scrollTop = pane.scrollHeight;
-}
-
-// ---------------------------------------------------------------------------
-// DMs View
-// ---------------------------------------------------------------------------
-
-async function loadDMAgents() {
-    const agents = await apiFetch('/api/agents');
-    const list = document.getElementById('dm-agent-list');
-    list.innerHTML = agents.map(a => `
-        <li onclick="selectDMAgent('${esc(a.name)}')"
-            class="${currentDMAgent === a.name ? 'active' : ''}">
-            ${esc(a.name)}
-            <span class="agent-status ${a.status}" style="font-size:10px; padding:1px 6px;">${a.status}</span>
-        </li>
-    `).join('');
-    if (currentDMAgent) loadDMMessages(currentDMAgent);
-}
-
-async function selectDMAgent(name) {
-    currentDMAgent = name;
-    loadDMAgents();
-    loadDMMessages(name);
-}
-
-async function loadDMMessages(name) {
-    const msgs = await apiFetch(`/api/agents/${name}/messages`);
-    const pane = document.getElementById('dm-messages');
-    if (!msgs.length) {
-        pane.innerHTML = `<p class="placeholder">No messages for ${esc(name)}</p>`;
-        return;
-    }
-    pane.innerHTML = msgs.map(renderMsg).join('');
-    pane.scrollTop = pane.scrollHeight;
-}
 
 // ---------------------------------------------------------------------------
 // SSE — Real-time updates
@@ -256,42 +298,40 @@ let eventSource = null;
 let heartbeatTimer = null;
 
 function connectSSE() {
-    const statusDot = document.getElementById('connection-status');
-
+    const dot = document.getElementById('connection-status');
     eventSource = new EventSource(`${API}/api/feed/stream`);
 
     eventSource.addEventListener('system.heartbeat', () => {
-        statusDot.className = 'status-dot connected';
-        statusDot.title = 'Connected';
-        resetHeartbeatWatchdog();
+        dot.className = 'status-dot connected';
+        dot.title = 'Connected';
+        resetHeartbeat();
     });
 
-    eventSource.addEventListener('new_message', (e) => {
-        // Refresh current view if relevant
-        if (currentView === 'channels' && currentChannel) loadChannelMessages(currentChannel);
-        if (currentView === 'messages' && currentDMAgent) loadDMMessages(currentDMAgent);
+    eventSource.addEventListener('new_message', () => {
+        // Refresh current view
+        if (selectedAgent) loadAgentMessages(selectedAgent);
+        if (selectedChannel) loadChannelMessages(selectedChannel);
+        loadChannelList();
     });
 
     eventSource.addEventListener('agent_status_change', () => {
-        if (currentView === 'agents') loadAgents();
+        loadAgents();
     });
 
     eventSource.onopen = () => {
-        statusDot.className = 'status-dot connected';
-        statusDot.title = 'Connected';
-        resetHeartbeatWatchdog();
+        dot.className = 'status-dot connected';
+        dot.title = 'Connected';
+        resetHeartbeat();
     };
-
     eventSource.onerror = () => {
-        statusDot.className = 'status-dot reconnecting';
-        statusDot.title = 'Reconnecting...';
+        dot.className = 'status-dot reconnecting';
+        dot.title = 'Reconnecting...';
     };
 }
 
-function resetHeartbeatWatchdog() {
+function resetHeartbeat() {
     if (heartbeatTimer) clearTimeout(heartbeatTimer);
     heartbeatTimer = setTimeout(() => {
-        console.warn('SSE heartbeat timeout — reconnecting');
         if (eventSource) { eventSource.close(); eventSource = null; }
         connectSSE();
     }, 45000);
@@ -301,6 +341,28 @@ function resetHeartbeatWatchdog() {
 // Helpers
 // ---------------------------------------------------------------------------
 
+function showPane(id) {
+    document.querySelectorAll('.pane').forEach(p => p.classList.remove('active'));
+    document.getElementById(id).classList.add('active');
+}
+
+function startMessageRefresh(fn) {
+    if (refreshTimer) clearInterval(refreshTimer);
+    refreshTimer = setInterval(fn, 5000);
+}
+
+async function apiFetch(path, opts = {}) {
+    const res = await fetch(`${API}${path}`, {
+        headers: { 'Content-Type': 'application/json', ...opts.headers },
+        ...opts,
+    });
+    if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: res.statusText }));
+        throw new Error(err.error || res.statusText);
+    }
+    return res.json();
+}
+
 function esc(str) {
     if (!str) return '';
     const div = document.createElement('div');
@@ -309,15 +371,15 @@ function esc(str) {
 }
 
 function renderMsg(m) {
-    const time = m.created_at ? new Date(m.created_at).toLocaleTimeString() : '';
-    const sender = m.from_agent || m.sender || '?';
+    const time = m.created_at ? new Date(m.created_at).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'}) : '';
+    const sender = m.from_agent || '?';
+    const isOp = sender === 'operator';
+    const target = m.to_agent ? ` &rarr; ${esc(m.to_agent)}` : (m.channel ? ` in #${esc(m.channel)}` : '');
     return `
         <div class="msg">
             <div class="msg-header">
-                <span class="msg-sender">${esc(sender)}</span>
-                <span class="msg-time">${esc(time)}</span>
-                ${m.to_agent ? `<span class="msg-time">to ${esc(m.to_agent)}</span>` : ''}
-                ${m.channel ? `<span class="msg-time">#${esc(m.channel)}</span>` : ''}
+                <span class="msg-sender ${isOp ? 'operator' : ''}">${esc(sender)}</span>
+                <span class="msg-meta">${target} &middot; ${esc(time)}</span>
             </div>
             <div class="msg-body">${esc(m.body)}</div>
         </div>
@@ -329,4 +391,6 @@ function renderMsg(m) {
 // ---------------------------------------------------------------------------
 
 loadAgents();
+loadChannelList();
+showActivityFeed();
 connectSSE();

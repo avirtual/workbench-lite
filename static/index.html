@@ -7,48 +7,84 @@
     <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
-    <header>
-        <h1>Basic Workbench</h1>
-        <span id="connection-status" class="status-dot disconnected" title="Disconnected"></span>
-    </header>
+    <!-- Left sidebar: agents + channels -->
+    <aside id="sidebar">
+        <div class="sidebar-header">
+            <h1>Workbench</h1>
+            <span id="connection-status" class="status-dot disconnected" title="Disconnected"></span>
+        </div>
 
-    <nav id="nav">
-        <button class="nav-btn active" data-view="agents">Agents</button>
-        <button class="nav-btn" data-view="channels">Channels</button>
-        <button class="nav-btn" data-view="messages">Messages</button>
-    </nav>
-
-    <main>
-        <!-- Agents View -->
-        <section id="view-agents" class="view active">
-            <div class="toolbar">
-                <button id="btn-add-agent" class="btn-primary">+ Add Agent</button>
-                <button id="btn-add-reviewer" class="btn-secondary">+ Spawn Reviewer</button>
-            </div>
-            <div id="agent-list" class="card-grid"></div>
-        </section>
-
-        <!-- Channels View -->
-        <section id="view-channels" class="view">
-            <div id="channel-sidebar" class="sidebar">
-                <h3>Channels</h3>
-                <ul id="channel-list"></ul>
-            </div>
-            <div id="channel-messages" class="message-pane">
-                <p class="placeholder">Select a channel to view messages</p>
-            </div>
-        </section>
-
-        <!-- Messages View -->
-        <section id="view-messages" class="view">
-            <div id="dm-sidebar" class="sidebar">
+        <div class="sidebar-section">
+            <div class="section-header">
                 <h3>Agents</h3>
-                <ul id="dm-agent-list"></ul>
+                <button id="btn-add-agent" class="btn-icon" title="Add Agent">+</button>
             </div>
-            <div id="dm-messages" class="message-pane">
-                <p class="placeholder">Select an agent to view DMs</p>
+            <ul id="agent-list"></ul>
+            <button id="btn-add-reviewer" class="btn-link">+ Spawn Reviewer</button>
+        </div>
+
+        <div class="sidebar-section">
+            <h3>Channels</h3>
+            <ul id="channel-list"></ul>
+        </div>
+
+        <div class="sidebar-section">
+            <h3>Activity</h3>
+            <div id="sidebar-activity" class="sidebar-activity-btn" onclick="showActivityFeed()">
+                Timeline
             </div>
-        </section>
+        </div>
+    </aside>
+
+    <!-- Main content area -->
+    <main id="main-content">
+        <!-- Default: activity feed -->
+        <div id="pane-activity" class="pane active">
+            <div class="pane-header">
+                <h2>Activity</h2>
+            </div>
+            <div id="activity-feed" class="message-pane"></div>
+        </div>
+
+        <!-- Agent DM pane -->
+        <div id="pane-agent" class="pane">
+            <div class="pane-header">
+                <h2 id="agent-pane-name"></h2>
+                <div class="pane-actions">
+                    <button id="btn-agent-output" class="btn-sm">Terminal</button>
+                    <button id="btn-agent-restart" class="btn-sm">Restart</button>
+                    <button id="btn-agent-stop" class="btn-sm btn-sm-danger">Stop</button>
+                </div>
+            </div>
+            <div id="agent-dm-messages" class="message-pane"></div>
+            <form id="form-agent-dm" class="compose-bar">
+                <input type="text" id="agent-dm-input" placeholder="Message agent..." autocomplete="off">
+                <button type="submit" class="btn-send">Send</button>
+            </form>
+        </div>
+
+        <!-- Channel pane -->
+        <div id="pane-channel" class="pane">
+            <div class="pane-header">
+                <h2 id="channel-pane-name"></h2>
+            </div>
+            <div id="channel-messages" class="message-pane"></div>
+            <form id="form-channel-post" class="compose-bar">
+                <input type="text" id="channel-input" placeholder="Post to channel..." autocomplete="off">
+                <button type="submit" class="btn-send">Send</button>
+            </form>
+        </div>
+
+        <!-- Terminal modal overlay -->
+        <div id="terminal-overlay" class="overlay hidden">
+            <div class="overlay-content">
+                <div class="overlay-header">
+                    <h3 id="terminal-title">Terminal</h3>
+                    <button class="btn-close" onclick="closeTerminal()">&times;</button>
+                </div>
+                <pre id="terminal-output" class="terminal"></pre>
+            </div>
+        </div>
     </main>
 
     <!-- Add Agent Modal -->
@@ -79,30 +115,6 @@
                     <button type="button" class="btn-cancel" onclick="closeModal()">Cancel</button>
                 </div>
             </form>
-        </div>
-    </div>
-
-    <!-- Agent Detail Modal -->
-    <div id="modal-agent-detail" class="modal hidden">
-        <div class="modal-content modal-wide">
-            <div class="modal-header">
-                <h2 id="detail-agent-name"></h2>
-                <div class="detail-actions">
-                    <button id="btn-restart-agent" class="btn-secondary">Restart</button>
-                    <button id="btn-stop-agent" class="btn-danger">Stop</button>
-                    <button type="button" class="btn-cancel" onclick="closeDetailModal()">Close</button>
-                </div>
-            </div>
-            <div class="detail-tabs">
-                <button class="tab-btn active" data-tab="output">Output</button>
-                <button class="tab-btn" data-tab="detail-msgs">Messages</button>
-            </div>
-            <div id="tab-output" class="tab-content active">
-                <pre id="agent-output" class="terminal"></pre>
-            </div>
-            <div id="tab-detail-msgs" class="tab-content">
-                <div id="agent-detail-messages"></div>
-            </div>
         </div>
     </div>
 

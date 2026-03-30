@@ -390,7 +390,7 @@ async def api_channel_messages(request: Request):
     channel = request.path_params["name"]
     limit = int(request.query_params.get("limit", "100"))
     with db() as conn:
-        msgs = messaging.read_channel(conn, channel, limit)
+        msgs = messaging.read_channel(conn, channel, after=None, limit=limit)
     return JSONResponse(msgs)
 
 
@@ -403,6 +403,44 @@ async def api_agent_messages(request: Request):
             "ORDER BY created_at DESC LIMIT ?", (name, name, limit)
         ).fetchall()
     return JSONResponse([dict(m) for m in msgs])
+
+
+async def api_post_to_channel(request: Request):
+    """POST /api/channels/:name/messages — operator posts to a channel."""
+    import messaging
+    channel = request.path_params["name"]
+    body = await request.json()
+    text = body.get("body", "").strip()
+    if not text:
+        return JSONResponse({"error": "body required"}, status_code=400)
+    with db() as conn:
+        result = messaging.post_to_channel(conn, "operator", channel, text)
+    from events import event_bus
+    msg_id = result.get("id") if isinstance(result, dict) else result
+    event_bus.publish("new_message", {
+        "id": msg_id, "from": "operator", "to": None, "body": text,
+        "channel": channel, "ts": now_iso()
+    })
+    return JSONResponse({"status": "posted"})
+
+
+async def api_send_dm(request: Request):
+    """POST /api/agents/:name/messages — operator sends DM to an agent."""
+    import messaging
+    name = request.path_params["name"]
+    body = await request.json()
+    text = body.get("body", "").strip()
+    if not text:
+        return JSONResponse({"error": "body required"}, status_code=400)
+    with db() as conn:
+        result = messaging.send_dm(conn, "operator", name, text)
+    from events import event_bus
+    msg_id = result.get("id") if isinstance(result, dict) else result
+    event_bus.publish("new_message", {
+        "id": msg_id, "from": "operator", "to": name, "body": text,
+        "channel": None, "ts": now_iso()
+    })
+    return JSONResponse({"status": "sent"})
 
 
 async def api_feed_stream(request: Request):
@@ -477,7 +515,9 @@ routes = [
     Route("/api/agents/{name}/restart", api_restart_agent, methods=["POST"]),
     Route("/api/channels", api_list_channels, methods=["GET"]),
     Route("/api/channels/{name}/messages", api_channel_messages, methods=["GET"]),
+    Route("/api/channels/{name}/messages", api_post_to_channel, methods=["POST"]),
     Route("/api/agents/{name}/messages", api_agent_messages, methods=["GET"]),
+    Route("/api/agents/{name}/messages", api_send_dm, methods=["POST"]),
     Route("/api/feed/stream", api_feed_stream, methods=["GET"]),
     Mount("/static", StaticFiles(directory=str(SCRIPT_DIR / "static")), name="static"),
     # MCP server endpoint for Claude Code agents
