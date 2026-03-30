@@ -1,10 +1,12 @@
-# Basic Workbench
+# Workbench Lite
+
+> **Early-stage MVP.** This is a simplified, rushed version of a much larger internal system. It works, but expect rough edges. Contributions and feedback welcome.
 
 Multi-agent coordination for Claude Code. Spawn agents on your repos, they talk to each other via DMs and channels, and you watch everything live in a web dashboard.
 
 ## What is this?
 
-You have repositories. You want Claude Code agents working on them — communicating, reviewing each other's work, and persisting knowledge across sessions. Basic Workbench gives you that with one command.
+You have repositories. You want Claude Code agents working on them — communicating, reviewing each other's work, and persisting knowledge across sessions. Workbench Lite gives you that with one command.
 
 **The killer feature:** One-click contrarian reviewer that pressure-tests every design and implementation.
 
@@ -12,7 +14,7 @@ You have repositories. You want Claude Code agents working on them — communica
 
 ```bash
 git clone <repo-url>
-cd basic-workbench
+cd workbench-lite
 cp .env.example .env          # edit .env to change port, host, etc.
 python3 -m venv .venv
 source .venv/bin/activate
@@ -32,8 +34,9 @@ Open http://127.0.0.1:9800 in your browser.
 ## Prerequisites
 
 - **Python 3.11+**
+- **SQLite 3** — included with Python on most systems
 - **tmux** — `brew install tmux` (macOS) or `apt install tmux` (Linux)
-- **Claude Code CLI** — installed and authenticated ([docs](https://docs.anthropic.com/en/docs/claude-code))
+- **Claude Code CLI** — installed, authenticated, and working ([docs](https://docs.anthropic.com/en/docs/claude-code)). The CLI must be able to run `claude` from the terminal — test with `claude --version`.
 
 ## Usage
 
@@ -47,17 +50,27 @@ Click **"+ Add Agent"** in the dashboard:
 
 ### 2. Add a Reviewer
 
-Click **"+ Spawn Reviewer"** for a one-click contrarian reviewer. It automatically subscribes to `#review` and critiques everything posted there.
+Click **"+ Spawn Reviewer"** for a one-click contrarian reviewer. It watches `#review` and critiques everything posted there.
 
 ### 3. Watch Them Work
 
 The dashboard shows:
-- **Agent cards** with live status (green = running, grey = stopped)
-- **Agent detail** with live terminal output and message history
+- **Agent sidebar** with live status (green = running, grey = stopped)
+- **Agent detail** with activity stream and message compose
 - **Channels** — real-time message streams (#review, #general, etc.)
-- **Messages** — DM conversations between agents
 
 All updates are live via Server-Sent Events.
+
+### Debugging
+
+Each agent runs in its own tmux session named `wb-{agent_name}`. To attach and see what an agent is doing:
+
+```bash
+tmux attach -t wb-dev       # attach to agent "dev"
+tmux attach -t wb-reviewer  # attach to agent "reviewer"
+```
+
+Detach with `Ctrl+B, D`. This is useful for debugging MCP connection issues, seeing raw Claude Code output, or manually interacting with an agent.
 
 ## How Agents Communicate
 
@@ -76,6 +89,8 @@ Agents get 11 MCP tools:
 | `memory_delete(key)` | Remove a key |
 | `list_agents()` | See who's online |
 | `quit()` | Stop yourself |
+
+All agents see all channels automatically — no subscription needed.
 
 ## The Contrarian Review Pattern
 
@@ -119,7 +134,8 @@ Copy `.env.example` to `.env` and adjust:
 ## Requirements
 
 - Python 3.11+
-- Claude Code CLI
+- SQLite 3 (bundled with Python)
+- Claude Code CLI (installed and authenticated)
 - tmux
 - Python packages: fastapi, uvicorn, mcp-sdk, starlette, python-dotenv
 
