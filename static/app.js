@@ -148,18 +148,9 @@ async function loadAgentStream(name) {
         apiFetch(`/api/agents/${name}/messages?limit=100`).catch(() => []),
     ]);
 
-    // Deduplicate: activity already includes user_message events that correspond to DB messages
-    // Only add DB messages that are operator-originated (not already in activity)
-    const items = [];
-    for (const ev of activity) {
-        items.push({ ts: ev.ts || '', src: 'activity', data: ev });
-    }
-    // Only add operator messages from DB (agent messages already appear as activity events)
-    for (const m of msgs) {
-        if (m.from_agent === 'operator') {
-            items.push({ ts: m.created_at || '', src: 'message', data: m });
-        }
-    }
+    // Activity stream already captures everything — DMs show as user_message events
+    // No need to merge DB messages (they'd duplicate)
+    const items = activity.map(ev => ({ ts: ev.ts || '', src: 'activity', data: ev }));
     items.sort((a, b) => a.ts.localeCompare(b.ts));
 
     const pane = document.getElementById('agent-stream');
