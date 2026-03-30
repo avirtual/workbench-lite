@@ -161,7 +161,7 @@ def _launch_and_orient(name, cwd, model, prompt, role, db_conn, workbench_url):
 
     # Write orient file and send to Claude
     orient_path = f"/tmp/basic-wb-orient-{name}.md"
-    Path(orient_path).write_text(_build_boot_prompt(name, prompt, role, db_conn))
+    Path(orient_path).write_text(prompt)
     _tmux_send(session, f"Read {orient_path} — this is your boot file. Follow all instructions in it.")
     time.sleep(0.5)
     _tmux_enter(session)
