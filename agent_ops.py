@@ -306,6 +306,23 @@ def restart_agent(name: str, db_conn, boot_prompt_override: str = None, *,
     return result
 
 
+def restart_activity_parsers(db_conn):
+    """Re-launch activity parsers for all alive agents. Call on server boot."""
+    rows = db_conn.execute("SELECT name FROM agents WHERE status = 'alive'").fetchall()
+    for row in rows:
+        name = row["name"]
+        symlink = _SESSIONS_DIR / f"{name}.jsonl"
+        if symlink.is_symlink() or symlink.exists():
+            parser_script = _SCRIPT_DIR / "activity_parser.py"
+            if parser_script.exists():
+                import subprocess as _sp
+                _sp.Popen(
+                    ["python3", str(parser_script), name, "--sessions-dir", str(_SESSIONS_DIR)],
+                    stdout=_sp.DEVNULL, stderr=_sp.DEVNULL,
+                )
+                log.info(f"Activity parser restarted for {name}")
+
+
 def list_agents(db_conn) -> list[dict]:
     """List all agents, reconciling DB status with live tmux state."""
     rows = db_conn.execute(

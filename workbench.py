@@ -765,6 +765,11 @@ def main():
     init_db()
     _register_tools()
 
+    # Auto-start activity parsers for any alive agents (survives server restart)
+    import agent_ops
+    with db() as conn:
+        agent_ops.restart_activity_parsers(conn)
+
     if HOST != "127.0.0.1":
         log.warning(f"⚠ Server binding to {HOST} — accessible beyond localhost!")
 
